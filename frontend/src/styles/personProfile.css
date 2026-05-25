@@ -1,0 +1,225 @@
+.person-profile-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 960px;
+}
+
+.profile-breadcrumb a {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--gov-blue);
+  text-decoration: none;
+}
+
+.profile-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.profile-retry-btn {
+  margin-top: 0.75rem;
+}
+
+.profile-header-card {
+  border-top: 4px solid var(--gov-gold);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 1.5rem 1.35rem;
+}
+
+.profile-header-main {
+  display: flex;
+  align-items: center;
+  gap: 1.15rem;
+  min-width: 0;
+}
+
+.profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--gov-navy);
+  color: var(--gov-gold);
+  font-size: 1.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 3px solid var(--gov-gold);
+}
+
+.profile-header-text h1 {
+  color: var(--gov-navy);
+  font-size: 1.65rem;
+  font-weight: 700;
+  margin: 0.15rem 0 0.35rem;
+  letter-spacing: -0.02em;
+  word-break: break-word;
+}
+
+.profile-eyebrow {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--gov-blue);
+}
+
+.profile-header-district {
+  color: var(--gov-muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.profile-header-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.profile-badge {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.profile-badge-360 {
+  background: var(--gov-navy);
+  color: #fff;
+}
+
+.profile-badge-id {
+  background: var(--gov-light);
+  color: var(--gov-navy);
+  border: 1px solid var(--gov-border);
+}
+
+.profile-relationships-btn {
+  margin-top: 0.35rem;
+  width: 100%;
+  font-size: 0.88rem;
+}
+
+.profile-summary-card {
+  border-top: 3px solid var(--gov-blue);
+  padding: 1.25rem 1.35rem;
+}
+
+.profile-summary-card h2 {
+  color: var(--gov-navy);
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.65rem;
+}
+
+.profile-summary-card p {
+  color: var(--gov-muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.profile-summary-card strong {
+  color: var(--gov-navy);
+}
+
+.profile-summary-meta {
+  margin-top: 0.75rem !important;
+  font-size: 0.85rem !important;
+}
+
+.profile-sections-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.15rem;
+}
+
+.profile-section {
+  border-top: 3px solid var(--gov-navy);
+  padding: 1.25rem 1.35rem;
+}
+
+.profile-section-wide {
+  grid-column: 1 / -1;
+  border-top-color: var(--gov-gold);
+}
+
+.profile-section h3 {
+  color: var(--gov-navy);
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--gov-border);
+}
+
+.profile-detail-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.profile-detail-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+}
+
+.profile-detail-item dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gov-muted);
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.profile-detail-item dd {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gov-navy);
+  word-break: break-word;
+}
+
+.profile-id-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--gov-blue);
+}
+
+@media (max-width: 768px) {
+  .profile-header-card {
+    flex-direction: column;
+  }
+
+  .profile-header-badges {
+    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .profile-sections-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-section-wide {
+    grid-column: auto;
+  }
+
+  .profile-detail-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-header-text h1 {
+    font-size: 1.35rem;
+  }
+}

@@ -1,0 +1,115 @@
+.admin-users-page .admin-users-intro {
+  margin-bottom: 1.25rem;
+}
+
+.admin-users-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  vertical-align: middle;
+}
+
+.admin-users-table .username-cell {
+  font-weight: 600;
+  color: var(--gov-navy);
+}
+
+.role-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(19, 64, 116, 0.1);
+  color: var(--gov-blue);
+  border: 1px solid rgba(19, 64, 116, 0.2);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.status-badge-active {
+  background: rgba(22, 101, 52, 0.12);
+  color: var(--gov-success);
+  border: 1px solid rgba(22, 101, 52, 0.25);
+}
+
+.status-badge-inactive {
+  background: rgba(153, 27, 27, 0.1);
+  color: var(--gov-error);
+  border: 1px solid rgba(153, 27, 27, 0.2);
+}
+
+.admin-users-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-users-actions .btn-sm {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.82rem;
+}
+
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 37, 69, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.admin-modal {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 440px;
+  padding: 1.5rem;
+  border: 1px solid var(--gov-border);
+}
+
+.admin-modal h3 {
+  color: var(--gov-navy);
+  margin-bottom: 1rem;
+}
+
+.admin-modal .form-group {
+  margin-bottom: 1rem;
+}
+
+.admin-modal .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.role-select-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.toggle-active-btn.active-on {
+  color: var(--gov-success);
+}
+
+.toggle-active-btn.active-off {
+  color: var(--gov-error);
+}

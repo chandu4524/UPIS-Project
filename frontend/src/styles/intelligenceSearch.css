@@ -1,0 +1,291 @@
+.intel-search-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.intel-search-intro {
+  border-top: 4px solid var(--gov-gold);
+  padding: 1.25rem 1.35rem;
+}
+
+.intel-search-intro h2 {
+  color: var(--gov-navy);
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+
+.intel-search-intro p {
+  color: var(--gov-muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 62ch;
+}
+
+.intel-search-bar-card {
+  border-top: 3px solid var(--gov-blue);
+  padding: 1.25rem 1.35rem 1.35rem;
+}
+
+.intel-search-form {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.intel-search-input-wrap {
+  flex: 1 1 280px;
+  position: relative;
+}
+
+.intel-search-input {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--gov-border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--gov-text);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.intel-search-input:focus {
+  outline: none;
+  border-color: var(--gov-blue);
+  box-shadow: 0 0 0 3px rgba(19, 64, 116, 0.15);
+}
+
+.intel-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid var(--gov-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.intel-suggestion-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--gov-text);
+}
+
+.intel-suggestion-item:hover,
+.intel-suggestion-item:focus {
+  background: #fff8e6;
+  outline: none;
+}
+
+.intel-search-btn {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
+.intel-search-hints {
+  margin-top: 0.85rem;
+  font-size: 0.82rem;
+  color: var(--gov-muted);
+}
+
+.intel-search-hints strong {
+  color: var(--gov-navy);
+}
+
+.intel-results-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.intel-results-section h3 {
+  color: var(--gov-navy);
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.intel-results-meta {
+  font-size: 0.88rem;
+  color: var(--gov-muted);
+  margin-bottom: 1rem;
+}
+
+.intel-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.intel-result-card {
+  border: 1px solid var(--gov-border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+.intel-result-card:hover {
+  border-color: var(--gov-gold);
+  box-shadow: var(--shadow);
+}
+
+.intel-result-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.intel-result-name {
+  color: var(--gov-navy);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.intel-relevance-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.intel-relevance-high {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.intel-relevance-medium {
+  background: #fff8e6;
+  color: #8a6d1f;
+  border: 1px solid #e8d48a;
+}
+
+.intel-relevance-low {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.intel-matched-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.intel-field-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: var(--gov-light);
+  color: var(--gov-blue);
+  border: 1px solid var(--gov-border);
+}
+
+.intel-result-fields {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.intel-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.intel-field-label {
+  color: var(--gov-muted);
+  min-width: 5.5rem;
+  font-weight: 600;
+}
+
+.intel-field-value {
+  color: var(--gov-text);
+  flex: 1;
+}
+
+.intel-field-value mark {
+  background: #fef08a;
+  color: var(--gov-navy);
+  padding: 0 0.1em;
+  border-radius: 2px;
+}
+
+.intel-result-actions {
+  margin-top: auto;
+  padding-top: 0.35rem;
+}
+
+.intel-empty-card {
+  border-top: 3px solid var(--gov-gold);
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.intel-empty-card h3 {
+  color: var(--gov-navy);
+  font-size: 1.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.intel-empty-card p {
+  color: var(--gov-muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  max-width: 42ch;
+  margin: 0 auto 0.75rem;
+}
+
+.intel-empty-examples {
+  font-size: 0.85rem;
+  color: var(--gov-blue);
+  font-weight: 600;
+}
+
+.intel-processing-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--gov-muted);
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .intel-results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .intel-search-btn {
+    width: 100%;
+  }
+}

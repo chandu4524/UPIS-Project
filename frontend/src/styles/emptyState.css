@@ -1,0 +1,27 @@
+.empty-state {
+  text-align: center;
+  padding: 2rem 1.5rem;
+  color: var(--gov-muted);
+}
+
+.empty-state-icon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 0.65rem;
+  opacity: 0.85;
+  color: var(--gov-gold);
+}
+
+.empty-state-title {
+  color: var(--gov-navy);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.empty-state-desc {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  max-width: 42ch;
+  margin: 0 auto 1rem;
+}

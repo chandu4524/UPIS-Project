@@ -1,0 +1,101 @@
+.reports-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.reports-intro {
+  border-top: 4px solid var(--gov-gold);
+  padding: 1.25rem 1.35rem;
+}
+
+.reports-intro h2 {
+  color: var(--gov-navy);
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+
+.reports-intro p {
+  color: var(--gov-muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 58ch;
+}
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.15rem;
+}
+
+.report-card {
+  border-top: 3px solid var(--gov-blue);
+  padding: 1.25rem 1.2rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.report-card:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+
+.report-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--gov-light);
+  border: 1px solid var(--gov-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.report-card h3 {
+  color: var(--gov-navy);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.report-card p {
+  color: var(--gov-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0;
+  flex: 1;
+}
+
+.report-record-badge {
+  align-self: flex-start;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gov-navy);
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 0.3rem 0.65rem;
+  border-radius: 20px;
+}
+
+.report-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.report-card-actions .btn {
+  width: 100%;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 600px) {
+  .reports-grid {
+    grid-template-columns: 1fr;
+  }
+}

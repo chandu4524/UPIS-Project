@@ -1,0 +1,28 @@
+.sensitive-access-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.sensitive-access-masked {
+  background: #fff8e6;
+  color: #8a6d1f;
+  border: 1px solid #e8d48a;
+}
+
+.sensitive-access-full {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.sensitive-field-masked {
+  font-family: ui-monospace, 'Consolas', monospace;
+  letter-spacing: 0.02em;
+}

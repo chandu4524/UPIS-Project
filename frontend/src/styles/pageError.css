@@ -1,0 +1,15 @@
+.page-error {
+  padding: 1.25rem 1.35rem;
+  border-top: 3px solid #f59e0b;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-error-message {
+  color: var(--gov-muted);
+  margin: 0;
+  font-size: 0.92rem;
+}

@@ -1,0 +1,225 @@
+.dash-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.dash-analytics-header {
+  border-top: 4px solid var(--gov-gold);
+  padding: 1.15rem 1.35rem;
+}
+
+.dash-analytics-header h3 {
+  color: var(--gov-navy);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+}
+
+.dash-analytics-retry-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--gov-muted);
+}
+
+.dash-analytics-subtitle {
+  color: var(--gov-muted);
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+.dash-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.15rem;
+}
+
+.dash-chart-card {
+  border-top: 3px solid var(--gov-blue);
+  padding: 1.15rem 1.25rem 1.25rem;
+  min-height: 200px;
+}
+
+.dash-chart-card.wide {
+  grid-column: 1 / -1;
+}
+
+.dash-chart-card h4 {
+  color: var(--gov-navy);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+}
+
+.dash-chart-meta {
+  font-size: 0.8rem;
+  color: var(--gov-muted);
+  margin: 0 0 0.75rem;
+}
+
+.dash-chart-wrap {
+  width: 100%;
+  min-height: 200px;
+}
+
+.dash-chart-empty {
+  color: var(--gov-muted);
+  font-size: 0.88rem;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.dash-ocr-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.dash-ocr-stat {
+  padding: 0.85rem 1rem;
+  background: var(--gov-light);
+  border: 1px solid var(--gov-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dash-ocr-stat.accent-gold {
+  border-color: #e8d48a;
+  background: #fff8e6;
+}
+
+.dash-ocr-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gov-muted);
+  font-weight: 600;
+}
+
+.dash-ocr-value {
+  font-size: 1.5rem;
+  color: var(--gov-navy);
+  font-weight: 700;
+}
+
+.dash-ocr-stat.accent-gold .dash-ocr-value {
+  color: #8a6d1f;
+}
+
+.dash-audit-layout {
+  display: grid;
+  grid-template-columns: 1fr minmax(240px, 320px);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.dash-recent-actions h5 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--gov-navy);
+  margin: 0 0 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dash-action-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.dash-action-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 0.15rem 0.5rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--gov-light);
+  border: 1px solid var(--gov-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+}
+
+.dash-action-type {
+  font-weight: 700;
+  color: var(--gov-blue);
+  grid-column: 1;
+}
+
+.dash-action-user {
+  color: var(--gov-navy);
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+  font-weight: 600;
+  text-align: right;
+}
+
+.dash-action-time {
+  color: var(--gov-muted);
+  font-size: 0.75rem;
+  grid-column: 1;
+}
+
+.dash-analytics-skeleton {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  padding: 0 0 0.5rem;
+}
+
+.dash-skeleton-chart {
+  height: 220px;
+  background: linear-gradient(90deg, #eef2f6 25%, #f8fafc 50%, #eef2f6 75%);
+  background-size: 200% 100%;
+  animation: dash-skeleton-shimmer 1.2s ease-in-out infinite;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gov-border);
+}
+
+.dash-skeleton-chart.wide {
+  grid-column: 1 / -1;
+}
+
+@keyframes dash-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .dash-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-chart-card.wide {
+    grid-column: 1;
+  }
+
+  .dash-audit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-analytics-skeleton {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-skeleton-chart.wide {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .dash-ocr-stats {
+    grid-template-columns: 1fr;
+  }
+}
