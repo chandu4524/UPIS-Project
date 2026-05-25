@@ -66,8 +66,8 @@ OCR_FOLDER = _resolve_folder_path(
 )
 
 # Default officer account (created on first run if missing)
-DEFAULT_OFFICER_USERNAME = os.getenv("DEFAULT_OFFICER_USERNAME", "officer")
-DEFAULT_OFFICER_PASSWORD = os.getenv("DEFAULT_OFFICER_PASSWORD", "officer123")
+DEFAULT_OFFICER_USERNAME = os.getenv("DEFAULT_OFFICER_USERNAME", "chandu")
+DEFAULT_OFFICER_PASSWORD = os.getenv("DEFAULT_OFFICER_PASSWORD", "Chandu@24")
 DEFAULT_OFFICER_ROLE = os.getenv("DEFAULT_OFFICER_ROLE", "admin")
 
 
