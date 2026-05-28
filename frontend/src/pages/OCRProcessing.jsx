@@ -91,11 +91,13 @@ export default function OCRProcessing() {
 
   const handleUpload = async () => {
     if (!file) {
-      setError('Please select a PDF file');
+      setError('Please select a PDF or image file');
       return;
     }
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Only PDF files are supported (including scanned PDFs)');
+    const lower = file.name.toLowerCase();
+    const ok = lower.endsWith('.pdf') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg');
+    if (!ok) {
+      setError('Only PDF or image files are supported (PDF, PNG, JPG, JPEG)');
       return;
     }
 
@@ -161,7 +163,7 @@ export default function OCRProcessing() {
         <section className="ocr-upload-card card">
           <header className="ocr-section-header">
             <h3>Upload document</h3>
-            <span className="ocr-format-hint">PDF · scanned PDF</span>
+            <span className="ocr-format-hint">PDF · scanned PDF · PNG · JPG</span>
           </header>
 
           {error && (
@@ -177,10 +179,10 @@ export default function OCRProcessing() {
           )}
 
           <FileDropZone
-            accept=".pdf,application/pdf"
+            accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
             file={file}
             onFileSelect={setFile}
-            hint="Drop a PDF here or click to browse"
+            hint="Drop a PDF or image here or click to browse"
           />
 
           {(uploading || uploadProgress > 0) && (

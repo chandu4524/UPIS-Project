@@ -17,6 +17,21 @@ export function formatError(err, fallback = 'Something went wrong. Please try ag
 
   const data = err.response?.data;
   if (data?.message && typeof data.message === 'string') {
+    const detail = data?.detail;
+    if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+      const missingCols = detail.missing_columns;
+      const ambiguousCols = detail.ambiguous_columns;
+      const foundCols = detail.found_columns;
+      if (Array.isArray(missingCols) && missingCols.length) {
+        return `${data.message} (Missing: ${missingCols.join(', ')})`;
+      }
+      if (Array.isArray(ambiguousCols) && ambiguousCols.length) {
+        return `${data.message} (Ambiguous: ${ambiguousCols.join(', ')})`;
+      }
+      if (Array.isArray(foundCols) && foundCols.length && data.message?.toLowerCase().includes('missing')) {
+        return `${data.message} (Found: ${foundCols.join(', ')})`;
+      }
+    }
     return data.message;
   }
 
