@@ -22,6 +22,8 @@ from app.services.normalization_service import (
     normalize_dob,
     _append_preview,
 )
+from app.services.staging_service import build_staging_row
+from app.services.entity_resolution_service_v2 import generate_candidates_for_upload
 
 REQUIRED_COLUMNS = ["full_name", "mobile", "district", "village", "dob"]
 MAX_VALIDATION_ERRORS = 100
@@ -160,15 +162,17 @@ def validate_upload_file(file: UploadFile) -> None:
         raise http_error(400, "Only CSV files are allowed")
 
 
-def validate_csv_columns(file_path: str) -> None:
+def validate_csv_columns(file_path: str) -> Tuple[pd.DataFrame, List[str], List[str]]:
     try:
         df = pd.read_csv(file_path, nrows=1)
     except Exception as exc:
         raise http_error(400, "Invalid CSV file", str(exc)) from exc
 
     df = canonicalize_columns(df)
+    found_columns = [str(c) for c in df.columns]
+    # Informational only — do NOT block upload based on missing columns.
     missing_columns = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    return df, missing_columns
+    return df, found_columns, missing_columns
 
 
 def _cell_empty(value) -> bool:
@@ -206,7 +210,12 @@ def validate_and_import_citizens(db: Session, df: pd.DataFrame) -> Dict[str, Any
 
 
 def validate_and_import_citizens_iter(
-    db: Session, chunks: Iterable[pd.DataFrame]
+    db: Session,
+    chunks: Iterable[pd.DataFrame],
+    *,
+    upload_batch_id: Optional[int] = None,
+    source_name: Optional[str] = None,
+    department_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Validate each CSV row (streaming over chunks), import valid records,
@@ -219,10 +228,15 @@ def validate_and_import_citizens_iter(
     invalid_rows = 0
     duplicate_rows = 0
     citizens_to_add: List[Citizen] = []
+    staging_to_add: List[Any] = []
     norm_summary = empty_normalization_summary()
     preview = norm_summary["preview"]
     total_rows = 0
     current_row_number = 2  # header is row 1
+    staged_rows = 0
+    rejected_rows = 0
+    partial_rows = 0
+    confidence_summary = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
 
     for df in chunks:
         if df is None or df.empty:
@@ -233,87 +247,131 @@ def validate_and_import_citizens_iter(
             row_number = current_row_number
             current_row_number += 1
             total_rows += 1
-        row_errors: List[Tuple[str, str]] = []
-        row_dict = row.to_dict()
-        norm = normalize_citizen_row(row_dict)
-        originals = norm["originals"]
-        normalized = norm["normalized"]
+            row_errors: List[Tuple[str, str]] = []
+            row_dict = row.to_dict()
+            norm = normalize_citizen_row(row_dict)
+            originals = norm["originals"]
+            normalized = norm["normalized"]
 
-        missing_fields = [
-            col for col in REQUIRED_COLUMNS if _cell_empty(row.get(col))
-        ]
-        if missing_fields:
-            row_errors.append(
-                (
-                    "MISSING_REQUIRED_FIELD",
-                    f"Missing required field(s): {', '.join(missing_fields)}",
+            # Flexible ingestion: do NOT reject rows just because full_name or dob is missing.
+            # Only validate DOB format if present.
+            if not _cell_empty(row.get("dob")) and not norm["dob_valid"]:
+                row_errors.append(
+                    (
+                        "INVALID_DOB",
+                        "Date of birth must use DD-MM-YYYY, DD/MM/YYYY, or YYYY-MM-DD format",
+                    )
                 )
-            )
-        elif not normalized["full_name"]:
-            row_errors.append(("EMPTY_NAME", "Full name cannot be empty"))
 
-        if not _cell_empty(row.get("dob")) and not norm["dob_valid"]:
-            row_errors.append(
-                (
-                    "INVALID_DOB",
-                    "Date of birth must use DD-MM-YYYY, DD/MM/YYYY, or YYYY-MM-DD format",
+            # If the row is completely empty, skip it as invalid.
+            if all(_cell_empty(row.get(c)) for c in row.index):
+                row_errors.append(("EMPTY_ROW", "Row contains no usable data"))
+
+            extracted_status = "staged"
+            if row_errors:
+                invalid_rows += 1
+                rejected_rows += 1
+                extracted_status = "rejected"
+                for error_type, description in row_errors:
+                    _append_error(errors, row_number, error_type, description)
+
+            mobile = normalized.get("mobile")
+            # Duplicate detection only when a mobile exists
+            if mobile and (mobile in existing_mobiles or mobile in seen_in_file):
+                duplicate_rows += 1
+                rejected_rows += 1
+                extracted_status = "rejected"
+                _append_error(
+                    errors,
+                    row_number,
+                    "DUPLICATE_MOBILE",
+                    f"Duplicate mobile number: {mobile}",
                 )
+                row_errors.append(("DUPLICATE_MOBILE", f"Duplicate mobile number: {mobile}"))
+
+            # Determine if this row should be imported to citizens (keep existing behavior safe):
+            # Require at least a name + mobile; otherwise keep it in staging only.
+            should_import = bool(normalized.get("full_name") and mobile)
+            if not should_import and extracted_status != "rejected":
+                partial_rows += 1
+                extracted_status = "partial"
+
+            # Always store staging row (raw + normalized + errors + confidence)
+            validation_payload = [
+                {"error_type": et, "description": desc} for et, desc in row_errors
+            ]
+            staging = build_staging_row(
+                upload_batch_id=int(upload_batch_id or 0),
+                row_number=int(row_number),
+                raw_row=row_dict,
+                normalized={**normalized, "matching_key": norm.get("matching_key"), "normalized_name": normalized.get("full_name")},
+                matching_key=norm.get("matching_key"),
+                validation_errors=validation_payload,
+                extraction_status=extracted_status,
+                source_name=source_name,
+                department_name=department_name,
             )
+            staging_to_add.append(staging)
+            confidence_summary[staging.confidence_level] = confidence_summary.get(staging.confidence_level, 0) + 1
+            staged_rows += 1
 
-        if row_errors:
-            invalid_rows += 1
-            for error_type, description in row_errors:
-                _append_error(errors, row_number, error_type, description)
-            continue
+            if extracted_status == "rejected":
+                continue
 
-        mobile = normalized["mobile"]
-        if mobile in existing_mobiles or mobile in seen_in_file:
-            duplicate_rows += 1
-            _append_error(
-                errors,
-                row_number,
-                "DUPLICATE_MOBILE",
-                f"Duplicate mobile number: {mobile}",
+            if norm["changes"]["name_changed"]:
+                norm_summary["names_normalized"] += 1
+                _append_preview(
+                    preview,
+                    row_number,
+                    "full_name",
+                    originals.get("full_name"),
+                    normalized.get("full_name"),
+                )
+            if norm["changes"]["phone_changed"]:
+                norm_summary["phones_normalized"] += 1
+                _append_preview(
+                    preview,
+                    row_number,
+                    "mobile",
+                    originals.get("mobile"),
+                    normalized.get("mobile"),
+                )
+            if norm["changes"]["dob_changed"]:
+                norm_summary["dates_normalized"] += 1
+                _append_preview(
+                    preview, row_number, "dob", originals.get("dob"), normalized.get("dob")
+                )
+
+            if norm.get("matching_key"):
+                norm_summary["matching_keys_generated"] += 1
+
+            citizen = Citizen(
+                full_name=normalized.get("full_name"),
+                mobile=mobile,
+                district=normalized.get("district"),
+                village=normalized.get("village"),
+                dob=normalized.get("dob"),
             )
-            continue
+            if should_import:
+                citizens_to_add.append(citizen)
+            if mobile:
+                existing_mobiles.add(mobile)
+                seen_in_file.add(mobile)
+            if should_import:
+                valid_rows += 1
 
-        if norm["changes"]["name_changed"]:
-            norm_summary["names_normalized"] += 1
-            _append_preview(
-                preview, row_number, "full_name", originals["full_name"], normalized["full_name"]
-            )
-        if norm["changes"]["phone_changed"]:
-            norm_summary["phones_normalized"] += 1
-            _append_preview(
-                preview, row_number, "mobile", originals["mobile"], normalized["mobile"]
-            )
-        if norm["changes"]["dob_changed"]:
-            norm_summary["dates_normalized"] += 1
-            _append_preview(preview, row_number, "dob", originals["dob"], normalized["dob"])
-
-        if norm["matching_key"]:
-            norm_summary["matching_keys_generated"] += 1
-
-        citizen = Citizen(
-            full_name=normalized["full_name"],
-            mobile=mobile,
-            district=normalized["district"],
-            village=normalized["village"],
-            dob=normalized["dob"],
-        )
-        citizens_to_add.append(citizen)
-        existing_mobiles.add(mobile)
-        seen_in_file.add(mobile)
-        valid_rows += 1
-
-        # Commit in batches so very large files don't blow memory
-        if len(citizens_to_add) >= 5000:
-            db.add_all(citizens_to_add)
-            db.commit()
-            citizens_to_add.clear()
+            # Commit in batches so very large files don't blow memory
+            if len(citizens_to_add) >= 5000 or len(staging_to_add) >= 5000:
+                db.add_all(citizens_to_add)
+                db.add_all(staging_to_add)
+                db.commit()
+                citizens_to_add.clear()
+                staging_to_add.clear()
 
     if citizens_to_add:
         db.add_all(citizens_to_add)
+    if staging_to_add:
+        db.add_all(staging_to_add)
         db.commit()
 
     return {
@@ -325,6 +383,10 @@ def validate_and_import_citizens_iter(
         "rows_imported": valid_rows,
         "rows_skipped": invalid_rows + duplicate_rows,
         "normalization": norm_summary,
+        "staged_rows": staged_rows,
+        "rejected_rows": rejected_rows,
+        "partial_rows": partial_rows,
+        "confidence_summary": confidence_summary,
     }
 
 
@@ -343,17 +405,17 @@ def process_csv_upload(
     file: UploadFile,
     file_path: str,
 ) -> dict:
-    df, missing = validate_csv_columns(file_path)
-    if missing:
-        raise http_error(
-            400,
-            "CSV is missing required columns",
-            {
-                "missing_columns": missing,
-                "required_columns": REQUIRED_COLUMNS,
-                "found_columns": list(df.columns),
-            },
-        )
+    # Create upload batch record early to get an ID for staging.
+    upload_record = Upload(
+        filename=file.filename,
+        uploaded_rows=0,
+        uploaded_at=datetime.utcnow(),
+    )
+    db.add(upload_record)
+    db.commit()
+    db.refresh(upload_record)
+
+    df, found_columns, missing_columns = validate_csv_columns(file_path)
 
     # Stream the CSV in chunks (supports very large files)
     chunk_iter = pd.read_csv(file_path, chunksize=50000)
@@ -373,18 +435,23 @@ def process_csv_upload(
                     missing_value_counts[c] += int(chunk[c].apply(_cell_empty).sum())
             yield chunk
 
-    validation = validate_and_import_citizens_iter(db, _normalized_chunks())
+    validation = validate_and_import_citizens_iter(
+        db,
+        _normalized_chunks(),
+        upload_batch_id=upload_record.id,
+        source_name=file.filename,
+        department_name=None,
+    )
     rows_imported = validation["rows_imported"]
     rows_skipped = validation["rows_skipped"]
-
-    upload_record = Upload(
-        filename=file.filename,
-        uploaded_rows=rows_imported,
-        uploaded_at=datetime.utcnow(),
-    )
-    db.add(upload_record)
+    upload_record.uploaded_rows = rows_imported
     db.commit()
-    db.refresh(upload_record)
+
+    # Generate manual review candidates after staging (safe: does not merge).
+    try:
+        candidate_stats = generate_candidates_for_upload(db, upload_record.id)
+    except Exception:
+        candidate_stats = {"created": 0, "skipped": 0}
 
     total_rows = validation["total_rows"] or 0
     missing_values = {
@@ -413,6 +480,12 @@ def process_csv_upload(
         "errors": validation["errors"],
         "normalization": validation.get("normalization", empty_normalization_summary()),
         "required_columns": REQUIRED_COLUMNS,
-        "found_columns": list(df.columns),
+        "found_columns": found_columns,
+        "missing_columns": missing_columns,
         "missing_values": missing_values,
+        "staged_rows": validation.get("staged_rows", 0),
+        "confidence_summary": validation.get("confidence_summary", {"HIGH": 0, "MEDIUM": 0, "LOW": 0}),
+        "rejected_rows": validation.get("rejected_rows", 0),
+        "partial_rows": validation.get("partial_rows", 0),
+        "match_candidates": candidate_stats,
     }

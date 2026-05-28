@@ -30,6 +30,7 @@ PERM_TEMPLATE_WRITE = "template:write"
 PERM_CITIZENS_READ = "citizens:read"
 PERM_SEARCH_READ = "search:read"
 PERM_REVIEW_WRITE = "review:write"
+PERM_PERSON_READ = "person:read"
 PERM_OCR_WRITE = "ocr:write"
 PERM_AUDIT_READ = "audit:read"
 PERM_REPORTS_READ = "reports:read"
@@ -65,6 +66,7 @@ _STATE_PERMS: Set[str] = {
     PERM_TEMPLATE_WRITE,
     PERM_CITIZENS_READ,
     PERM_SEARCH_READ,
+    PERM_PERSON_READ,
     PERM_REVIEW_WRITE,
     PERM_OCR_WRITE,
     PERM_AUDIT_READ,
@@ -83,6 +85,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             PERM_TEMPLATE_WRITE,
             PERM_CITIZENS_READ,
             PERM_SEARCH_READ,
+            PERM_PERSON_READ,
             PERM_REVIEW_WRITE,
             PERM_OCR_WRITE,
             PERM_AUDIT_READ,
@@ -102,6 +105,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             PERM_TEMPLATE_WRITE,
             PERM_CITIZENS_READ,
             PERM_SEARCH_READ,
+            PERM_PERSON_READ,
             PERM_REVIEW_WRITE,
             PERM_ASSISTANT_USE,
         }
@@ -111,6 +115,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             PERM_DASHBOARD_READ,
             PERM_CITIZENS_READ,
             PERM_SEARCH_READ,
+            PERM_PERSON_READ,
             PERM_ASSISTANT_USE,
             PERM_VIEW_SENSITIVE_FIELDS,
         }
@@ -123,6 +128,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             PERM_TEMPLATE_WRITE,
             PERM_CITIZENS_READ,
             PERM_SEARCH_READ,
+            PERM_PERSON_READ,
             PERM_REVIEW_WRITE,
             PERM_ASSISTANT_USE,
         }
@@ -134,6 +140,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             PERM_AUDIT_READ,
             PERM_REPORTS_READ,
             PERM_CITIZENS_READ,
+            PERM_PERSON_READ,
         }
     ),
 }

@@ -16,6 +16,10 @@ from app.models.entity_review import EntityReview  # noqa: F401
 from app.models.template_mapping import TemplateMapping  # noqa: F401
 from app.models.citizen import Citizen  # noqa: F401
 from app.models.ocr_document import OcrDocument  # noqa: F401
+from app.models.match_candidate import MatchCandidate  # noqa: F401
+from app.models.person_staging import PersonStaging  # noqa: F401
+from app.models.person_source import PersonSource  # noqa: F401
+from app.models.person_relationship import PersonRelationship  # noqa: F401
 from app.models.upload import Upload  # noqa: F401
 from app.models.user import User  # noqa: F401
 

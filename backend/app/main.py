@@ -19,6 +19,9 @@ from app.api.dashboard_api import router as dashboard_router
 from app.api.upload_api import router as upload_router
 from app.api.user_api import router as user_router
 from app.api.users_admin_api import router as users_admin_router
+from app.routes.staging_routes import router as staging_router
+from app.routes.manual_review_routes_v2 import router as manual_review_v2_router
+from app.routes.person360_routes import router as person360_router
 from app.core.config import (
     APP_ENV,
     LOG_LEVEL,
@@ -108,12 +111,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(user_router)
 app.include_router(users_admin_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
+app.include_router(staging_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(citizen_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(template_mapping_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
+app.include_router(manual_review_v2_router, prefix="/api")
+app.include_router(person360_router, prefix="/api")
 app.include_router(ocr_router, prefix="/api")
 app.include_router(intelligence_search_router, prefix="/api")
 app.include_router(assistant_router, prefix="/api")
