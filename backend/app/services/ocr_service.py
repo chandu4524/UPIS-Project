@@ -25,8 +25,9 @@ def ensure_ocr_folder() -> None:
 def validate_ocr_file(file: UploadFile) -> None:
     if not file.filename:
         raise http_error(400, "No file provided")
-    if not file.filename.lower().endswith(".pdf"):
-        raise http_error(400, "Only PDF files are supported for OCR processing")
+    name = file.filename.lower()
+    if not (name.endswith(".pdf") or name.endswith(".png") or name.endswith(".jpg") or name.endswith(".jpeg")):
+        raise http_error(400, "Only PDF or image files are supported for OCR processing (PDF, PNG, JPG, JPEG)")
 
 
 def save_ocr_file(file: UploadFile) -> str:
@@ -174,6 +175,34 @@ def process_pdf_ocr(file_path: str, filename: str) -> Dict[str, Any]:
         "table_rows": table_rows,
         "row_count": len(table_rows),
     }
+
+
+def process_file_ocr(file_path: str, filename: str) -> Dict[str, Any]:
+    lower = (filename or "").lower()
+    if lower.endswith(".pdf"):
+        return process_pdf_ocr(file_path, filename)
+
+    try:
+        from PIL import Image
+    except Exception as exc:
+        raise http_error(500, "Image OCR requires Pillow to be installed", str(exc)) from exc
+
+    try:
+        image = Image.open(file_path)
+        text, conf = _ocr_image(image)
+        extracted_text = (text or "").strip()
+        table_rows = extract_table_rows(extracted_text)
+        return {
+            "filename": filename,
+            "extracted_text": extracted_text,
+            "confidence_score": round(float(conf or 0.0), 2),
+            "pages_processed": 1,
+            "ocr_engine": "image_ocr",
+            "table_rows": table_rows,
+            "row_count": len(table_rows),
+        }
+    except Exception as exc:
+        raise http_error(500, "Failed to process image for OCR", str(exc)) from exc
 
 
 def ocr_document_to_dict(doc: OcrDocument, include_text: bool = True) -> dict:

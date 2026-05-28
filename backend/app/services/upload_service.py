@@ -4,7 +4,7 @@ import re
 import shutil
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 import pandas as pd
 from fastapi import UploadFile
@@ -25,6 +25,73 @@ from app.services.normalization_service import (
 
 REQUIRED_COLUMNS = ["full_name", "mobile", "district", "village", "dob"]
 MAX_VALIDATION_ERRORS = 100
+
+
+def normalize_header(header):
+    return (
+        str(header)
+        .strip()
+        .lower()
+        .replace("-", "*")
+        .replace(" ", "*")
+    )
+
+
+HEADER_ALIASES = {
+    "full_name": [
+        "full_name",
+        "full name",
+        "name",
+        "customer_name",
+        "consumer_name",
+        "person_name",
+        "citizen_name",
+    ],
+    "mobile": [
+        "mobile",
+        "mobile_no",
+        "mobile_number",
+        "phone",
+        "phone_number",
+        "contact",
+    ],
+    "district": [
+        "district",
+        "district_name",
+    ],
+    "village": [
+        "village",
+        "village_name",
+        "town",
+        "area",
+        "location",
+    ],
+    "dob": [
+        "dob",
+        "date_of_birth",
+        "birth_date",
+        "date of birth",
+        "birthdate",
+        "age_dob",
+    ],
+}
+
+
+def canonicalize_columns(df):
+    renamed = {}
+    normalized_cols = {
+        normalize_header(c): c
+        for c in df.columns
+    }
+
+    for canonical, aliases in HEADER_ALIASES.items():
+        for alias in aliases:
+            key = normalize_header(alias)
+            if key in normalized_cols:
+                renamed[normalized_cols[key]] = canonical
+                break
+
+    return df.rename(columns=renamed)
 
 DOB_PATTERNS = (
     re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$"),
@@ -99,13 +166,9 @@ def validate_csv_columns(file_path: str) -> None:
     except Exception as exc:
         raise http_error(400, "Invalid CSV file", str(exc)) from exc
 
-    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-    if missing:
-        raise http_error(
-            400,
-            "CSV is missing required columns",
-            {"missing_columns": missing, "required_columns": REQUIRED_COLUMNS},
-        )
+    df = canonicalize_columns(df)
+    missing_columns = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    return df, missing_columns
 
 
 def _cell_empty(value) -> bool:
@@ -139,8 +202,15 @@ def _append_error(
 
 
 def validate_and_import_citizens(db: Session, df: pd.DataFrame) -> Dict[str, Any]:
+    return validate_and_import_citizens_iter(db, [df])
+
+
+def validate_and_import_citizens_iter(
+    db: Session, chunks: Iterable[pd.DataFrame]
+) -> Dict[str, Any]:
     """
-    Validate each CSV row, import valid records, and return a quality summary.
+    Validate each CSV row (streaming over chunks), import valid records,
+    and return a quality summary.
     """
     existing_mobiles = _load_existing_mobiles(db)
     seen_in_file: set = set()
@@ -151,9 +221,18 @@ def validate_and_import_citizens(db: Session, df: pd.DataFrame) -> Dict[str, Any
     citizens_to_add: List[Citizen] = []
     norm_summary = empty_normalization_summary()
     preview = norm_summary["preview"]
+    total_rows = 0
+    current_row_number = 2  # header is row 1
 
-    for index, row in df.iterrows():
-        row_number = int(index) + 2
+    for df in chunks:
+        if df is None or df.empty:
+            continue
+        # ensure stable order to keep row_number consistent
+        df = df.reset_index(drop=True)
+        for _, row in df.iterrows():
+            row_number = current_row_number
+            current_row_number += 1
+            total_rows += 1
         row_errors: List[Tuple[str, str]] = []
         row_dict = row.to_dict()
         norm = normalize_citizen_row(row_dict)
@@ -227,11 +306,16 @@ def validate_and_import_citizens(db: Session, df: pd.DataFrame) -> Dict[str, Any
         seen_in_file.add(mobile)
         valid_rows += 1
 
+        # Commit in batches so very large files don't blow memory
+        if len(citizens_to_add) >= 5000:
+            db.add_all(citizens_to_add)
+            db.commit()
+            citizens_to_add.clear()
+
     if citizens_to_add:
         db.add_all(citizens_to_add)
         db.commit()
 
-    total_rows = len(df)
     return {
         "total_rows": total_rows,
         "valid_rows": valid_rows,
@@ -259,13 +343,37 @@ def process_csv_upload(
     file: UploadFile,
     file_path: str,
 ) -> dict:
-    validate_csv_columns(file_path)
+    df, missing = validate_csv_columns(file_path)
+    if missing:
+        raise http_error(
+            400,
+            "CSV is missing required columns",
+            {
+                "missing_columns": missing,
+                "required_columns": REQUIRED_COLUMNS,
+                "found_columns": list(df.columns),
+            },
+        )
 
-    df = pd.read_csv(file_path)
-    if df.empty:
-        raise http_error(400, "CSV file contains no data rows")
+    # Stream the CSV in chunks (supports very large files)
+    chunk_iter = pd.read_csv(file_path, chunksize=50000)
+    missing_value_counts: Dict[str, int] = {c: 0 for c in REQUIRED_COLUMNS}
+    preview_rows: Optional[List[Dict[str, Any]]] = None
 
-    validation = validate_and_import_citizens(db, df)
+    def _normalized_chunks() -> Iterable[pd.DataFrame]:
+        nonlocal preview_rows
+        for chunk in chunk_iter:
+            chunk = canonicalize_columns(chunk)
+            if preview_rows is None and not chunk.empty:
+                preview_rows = chunk.head(5).to_dict(orient="records")
+            for c in REQUIRED_COLUMNS:
+                if c in chunk.columns:
+                    # pandas vectorization isn't perfect here because _cell_empty is custom,
+                    # but the chunk size keeps this fast enough.
+                    missing_value_counts[c] += int(chunk[c].apply(_cell_empty).sum())
+            yield chunk
+
+    validation = validate_and_import_citizens_iter(db, _normalized_chunks())
     rows_imported = validation["rows_imported"]
     rows_skipped = validation["rows_skipped"]
 
@@ -278,14 +386,24 @@ def process_csv_upload(
     db.commit()
     db.refresh(upload_record)
 
-    data_preview = df.head(5).to_dict(orient="records")
+    total_rows = validation["total_rows"] or 0
+    missing_values = {
+        c: {
+            "missing": int(missing_value_counts.get(c, 0)),
+            "total_rows": int(total_rows),
+            "percent": (float(missing_value_counts.get(c, 0)) / float(total_rows) * 100.0)
+            if total_rows
+            else 0.0,
+        }
+        for c in REQUIRED_COLUMNS
+    }
 
     return {
         "success": True,
         "message": "Upload completed with validation results",
         "file_id": upload_record.id,
         "filename": file.filename,
-        "preview_data": data_preview,
+        "preview_data": preview_rows or [],
         "rows_imported": rows_imported,
         "rows_skipped": rows_skipped,
         "total_rows": validation["total_rows"],
@@ -294,4 +412,7 @@ def process_csv_upload(
         "duplicate_rows": validation["duplicate_rows"],
         "errors": validation["errors"],
         "normalization": validation.get("normalization", empty_normalization_summary()),
+        "required_columns": REQUIRED_COLUMNS,
+        "found_columns": list(df.columns),
+        "missing_values": missing_values,
     }

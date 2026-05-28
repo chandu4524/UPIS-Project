@@ -9,7 +9,7 @@ from app.core.exceptions import http_error
 from app.services.ocr_service import (
     get_ocr_document,
     list_ocr_history,
-    process_pdf_ocr,
+    process_file_ocr,
     save_ocr_document,
     save_ocr_file,
     validate_ocr_file,
@@ -61,11 +61,11 @@ def ocr_upload(
     validate_ocr_file(file)
     file_path = save_ocr_file(file)
     try:
-        result = process_pdf_ocr(file_path, file.filename)
+        result = process_file_ocr(file_path, file.filename)
         record = save_ocr_document(db, result)
         return {
             "success": True,
-            "message": "PDF processed with OCR successfully",
+            "message": "Document processed with OCR successfully",
             "logged_in_user": current_user.username,
             "id": record.id,
             "filename": record.filename,

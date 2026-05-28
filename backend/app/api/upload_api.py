@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
@@ -49,3 +51,43 @@ def upload_file(
     )
     result["logged_in_user"] = current_user.username
     return result
+
+
+@router.post("/upload-files")
+def upload_files(
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_permission(PERM_UPLOAD_WRITE)),
+):
+    if not files:
+        return {"success": False, "message": "No files provided", "items": []}
+    if len(files) > 30:
+        # Keep limit server-side too
+        return {
+            "success": False,
+            "message": "Too many files (max 30)",
+            "items": [],
+        }
+
+    items = []
+    for file in files:
+        validate_upload_file(file)
+        file_path = save_upload_file(file)
+        result = process_csv_upload(db, file, file_path)
+        log_action(
+            db,
+            username=current_user.username,
+            action_type=ACTION_UPLOAD_FILE,
+            entity_type="upload",
+            entity_id=str(result.get("file_id", "")),
+        )
+        result["logged_in_user"] = current_user.username
+        items.append(result)
+
+    return {
+        "success": True,
+        "message": "Files uploaded",
+        "count": len(items),
+        "items": items,
+        "logged_in_user": current_user.username,
+    }
