@@ -17,6 +17,7 @@ from app.api.template_mapping_api import router as template_mapping_router
 from app.api.citizen_api import router as citizen_router
 from app.api.dashboard_api import router as dashboard_router
 from app.api.upload_api import router as upload_router
+from app.api.bulk_upload_api import router as bulk_upload_router
 from app.api.user_api import router as user_router
 from app.api.users_admin_api import router as users_admin_router
 from app.routes.staging_routes import router as staging_router
@@ -111,6 +112,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(user_router)
 app.include_router(users_admin_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
+app.include_router(bulk_upload_router, prefix="/api")
 app.include_router(staging_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(citizen_router, prefix="/api")

@@ -24,76 +24,13 @@ from app.services.normalization_service import (
 )
 from app.services.staging_service import build_staging_row
 from app.services.entity_resolution_service_v2 import generate_candidates_for_upload
+from app.services.header_canonicalization import (
+    CORE_IMPORT_COLUMNS,
+    canonicalize_columns,
+)
 
-REQUIRED_COLUMNS = ["full_name", "mobile", "district", "village", "dob"]
+REQUIRED_COLUMNS = CORE_IMPORT_COLUMNS
 MAX_VALIDATION_ERRORS = 100
-
-
-def normalize_header(header):
-    return (
-        str(header)
-        .strip()
-        .lower()
-        .replace("-", "*")
-        .replace(" ", "*")
-    )
-
-
-HEADER_ALIASES = {
-    "full_name": [
-        "full_name",
-        "full name",
-        "name",
-        "customer_name",
-        "consumer_name",
-        "person_name",
-        "citizen_name",
-    ],
-    "mobile": [
-        "mobile",
-        "mobile_no",
-        "mobile_number",
-        "phone",
-        "phone_number",
-        "contact",
-    ],
-    "district": [
-        "district",
-        "district_name",
-    ],
-    "village": [
-        "village",
-        "village_name",
-        "town",
-        "area",
-        "location",
-    ],
-    "dob": [
-        "dob",
-        "date_of_birth",
-        "birth_date",
-        "date of birth",
-        "birthdate",
-        "age_dob",
-    ],
-}
-
-
-def canonicalize_columns(df):
-    renamed = {}
-    normalized_cols = {
-        normalize_header(c): c
-        for c in df.columns
-    }
-
-    for canonical, aliases in HEADER_ALIASES.items():
-        for alias in aliases:
-            key = normalize_header(alias)
-            if key in normalized_cols:
-                renamed[normalized_cols[key]] = canonical
-                break
-
-    return df.rename(columns=renamed)
 
 DOB_PATTERNS = (
     re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$"),
@@ -162,17 +99,19 @@ def validate_upload_file(file: UploadFile) -> None:
         raise http_error(400, "Only CSV files are allowed")
 
 
-def validate_csv_columns(file_path: str) -> Tuple[pd.DataFrame, List[str], List[str]]:
+def validate_csv_columns(
+    file_path: str,
+) -> Tuple[pd.DataFrame, List[str], List[str], Dict[str, str]]:
     try:
         df = pd.read_csv(file_path, nrows=1)
     except Exception as exc:
         raise http_error(400, "Invalid CSV file", str(exc)) from exc
 
-    df = canonicalize_columns(df)
+    df, column_mapping = canonicalize_columns(df)
     found_columns = [str(c) for c in df.columns]
-    # Informational only — do NOT block upload based on missing columns.
+    # Informational only — never reject upload for missing core columns.
     missing_columns = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    return df, found_columns, missing_columns
+    return df, found_columns, missing_columns, column_mapping
 
 
 def _cell_empty(value) -> bool:
@@ -400,38 +339,44 @@ def save_upload_file(file: UploadFile) -> str:
     return file_path
 
 
-def process_csv_upload(
+def process_dataframe_upload(
     db: Session,
-    file: UploadFile,
-    file_path: str,
+    *,
+    filename: str,
+    chunk_iter: Iterable[pd.DataFrame],
+    found_columns: Optional[List[str]] = None,
+    missing_columns: Optional[List[str]] = None,
+    column_mapping: Optional[Dict[str, str]] = None,
+    department_name: Optional[str] = None,
+    upload_record: Optional[Upload] = None,
 ) -> dict:
-    # Create upload batch record early to get an ID for staging.
-    upload_record = Upload(
-        filename=file.filename,
-        uploaded_rows=0,
-        uploaded_at=datetime.utcnow(),
-    )
-    db.add(upload_record)
-    db.commit()
-    db.refresh(upload_record)
+    """
+    Core ingestion pipeline: staging + optional citizen import + match candidates.
+    Used by single CSV upload and bulk multi-format upload.
+    """
+    if upload_record is None:
+        upload_record = Upload(
+            filename=filename,
+            uploaded_rows=0,
+            uploaded_at=datetime.utcnow(),
+        )
+        db.add(upload_record)
+        db.commit()
+        db.refresh(upload_record)
 
-    df, found_columns, missing_columns = validate_csv_columns(file_path)
-
-    # Stream the CSV in chunks (supports very large files)
-    chunk_iter = pd.read_csv(file_path, chunksize=50000)
     missing_value_counts: Dict[str, int] = {c: 0 for c in REQUIRED_COLUMNS}
     preview_rows: Optional[List[Dict[str, Any]]] = None
 
     def _normalized_chunks() -> Iterable[pd.DataFrame]:
         nonlocal preview_rows
         for chunk in chunk_iter:
-            chunk = canonicalize_columns(chunk)
+            if chunk is None or chunk.empty:
+                continue
+            chunk, _ = canonicalize_columns(chunk)
             if preview_rows is None and not chunk.empty:
                 preview_rows = chunk.head(5).to_dict(orient="records")
             for c in REQUIRED_COLUMNS:
                 if c in chunk.columns:
-                    # pandas vectorization isn't perfect here because _cell_empty is custom,
-                    # but the chunk size keeps this fast enough.
                     missing_value_counts[c] += int(chunk[c].apply(_cell_empty).sum())
             yield chunk
 
@@ -439,21 +384,23 @@ def process_csv_upload(
         db,
         _normalized_chunks(),
         upload_batch_id=upload_record.id,
-        source_name=file.filename,
-        department_name=None,
+        source_name=filename,
+        department_name=department_name,
     )
     rows_imported = validation["rows_imported"]
-    rows_skipped = validation["rows_skipped"]
     upload_record.uploaded_rows = rows_imported
     db.commit()
 
-    # Generate manual review candidates after staging (safe: does not merge).
     try:
         candidate_stats = generate_candidates_for_upload(db, upload_record.id)
     except Exception:
         candidate_stats = {"created": 0, "skipped": 0}
 
     total_rows = validation["total_rows"] or 0
+    found_columns = found_columns or []
+    missing_columns = missing_columns or [c for c in REQUIRED_COLUMNS if c not in found_columns]
+    column_mapping = column_mapping or {}
+
     missing_values = {
         c: {
             "missing": int(missing_value_counts.get(c, 0)),
@@ -469,10 +416,10 @@ def process_csv_upload(
         "success": True,
         "message": "Upload completed with validation results",
         "file_id": upload_record.id,
-        "filename": file.filename,
+        "filename": filename,
         "preview_data": preview_rows or [],
         "rows_imported": rows_imported,
-        "rows_skipped": rows_skipped,
+        "rows_skipped": validation["rows_skipped"],
         "total_rows": validation["total_rows"],
         "valid_rows": validation["valid_rows"],
         "invalid_rows": validation["invalid_rows"],
@@ -482,6 +429,7 @@ def process_csv_upload(
         "required_columns": REQUIRED_COLUMNS,
         "found_columns": found_columns,
         "missing_columns": missing_columns,
+        "column_mapping": column_mapping,
         "missing_values": missing_values,
         "staged_rows": validation.get("staged_rows", 0),
         "confidence_summary": validation.get("confidence_summary", {"HIGH": 0, "MEDIUM": 0, "LOW": 0}),
@@ -489,3 +437,21 @@ def process_csv_upload(
         "partial_rows": validation.get("partial_rows", 0),
         "match_candidates": candidate_stats,
     }
+
+
+def process_csv_upload(
+    db: Session,
+    file: UploadFile,
+    file_path: str,
+) -> dict:
+    df, found_columns, missing_columns, column_mapping = validate_csv_columns(file_path)
+    chunk_iter = pd.read_csv(file_path, chunksize=50000)
+    return process_dataframe_upload(
+        db,
+        filename=file.filename or "upload.csv",
+        chunk_iter=chunk_iter,
+        found_columns=found_columns,
+        missing_columns=missing_columns,
+        column_mapping=column_mapping,
+        department_name=None,
+    )
