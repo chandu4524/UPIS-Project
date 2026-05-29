@@ -230,7 +230,12 @@ def validate_and_import_citizens_iter(
 
             # Determine if this row should be imported to citizens (keep existing behavior safe):
             # Require at least a name + mobile; otherwise keep it in staging only.
-            should_import = bool(normalized.get("full_name") and mobile)
+            usable_fields = [
+                v for v in normalized.values()
+                if v is not None and str(v).strip() != ""
+            ]
+
+            should_import = len(usable_fields) > 0
             if not should_import and extracted_status != "rejected":
                 partial_rows += 1
                 extracted_status = "partial"
@@ -285,7 +290,7 @@ def validate_and_import_citizens_iter(
                 norm_summary["matching_keys_generated"] += 1
 
             citizen = Citizen(
-                full_name=normalized.get("full_name"),
+                full_name=normalized.get("full_name") or "Unknown",
                 mobile=mobile,
                 district=normalized.get("district"),
                 village=normalized.get("village"),
