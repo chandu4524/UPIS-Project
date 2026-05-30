@@ -8,12 +8,13 @@ from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 import pandas as pd
 from fastapi import UploadFile
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_FOLDER
 from app.core.exceptions import http_error
 from app.models.citizen import Citizen
+from app.models.person_staging import PersonStaging
 from app.models.upload import Upload
 from app.services.citizen_service import _load_existing_mobiles
 from app.services.normalization_service import (
@@ -26,11 +27,26 @@ from app.services.staging_service import build_staging_row
 from app.services.entity_resolution_service_v2 import generate_candidates_for_upload
 from app.services.header_canonicalization import (
     CORE_IMPORT_COLUMNS,
+    build_column_mapping,
     canonicalize_columns,
 )
+from app.services.file_ingestion_service import load_file_as_dataframe
 
 REQUIRED_COLUMNS = CORE_IMPORT_COLUMNS
 MAX_VALIDATION_ERRORS = 100
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ".csv",
+    ".xlsx",
+    ".xls",
+    ".pdf",
+    ".txt",
+    ".json",
+    ".xml",
+    ".png",
+    ".jpg",
+    ".jpeg",
+}
+UPLOAD_CHUNK_SIZE = 50000
 
 DOB_PATTERNS = (
     re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$"),
@@ -42,20 +58,23 @@ DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
 
 
-def _upload_status(upload: Upload) -> str:
-    if upload.uploaded_rows > 0:
+def _upload_status(upload: Upload, staged_count: int = 0) -> str:
+    if (upload.uploaded_rows or 0) > 0 or staged_count > 0:
         return "Completed"
     return "No records"
 
 
-def upload_to_dict(upload: Upload) -> dict:
+def upload_to_dict(upload: Upload, staged_count: int = 0) -> dict:
     uploaded_by = getattr(upload, "uploaded_by", None)
+    imported_rows = int(upload.uploaded_rows or 0)
+    processed_rows = max(imported_rows, int(staged_count or 0))
     return {
         "id": upload.id,
         "filename": upload.filename,
-        "uploaded_rows": upload.uploaded_rows,
-        "uploaded_at": upload.uploaded_at,
-        "status": _upload_status(upload),
+        "uploaded_rows": processed_rows,
+        "imported_rows": imported_rows,
+        "uploaded_at": upload.uploaded_at.isoformat() if upload.uploaded_at else None,
+        "status": _upload_status(upload, staged_count),
         "uploaded_by": uploaded_by,
     }
 
@@ -79,8 +98,18 @@ def list_uploads_paginated(
     )
     total_pages = math.ceil(total / page_size) if total else 0
 
+    upload_ids = [u.id for u in uploads]
+    staging_counts: Dict[int, int] = {}
+    if upload_ids:
+        staging_counts = dict(
+            db.query(PersonStaging.upload_batch_id, func.count(PersonStaging.id))
+            .filter(PersonStaging.upload_batch_id.in_(upload_ids))
+            .group_by(PersonStaging.upload_batch_id)
+            .all()
+        )
+
     return {
-        "items": [upload_to_dict(u) for u in uploads],
+        "items": [upload_to_dict(u, staging_counts.get(u.id, 0)) for u in uploads],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -95,8 +124,10 @@ def ensure_upload_folder():
 def validate_upload_file(file: UploadFile) -> None:
     if not file.filename:
         raise http_error(400, "No file provided")
-    if not file.filename.lower().endswith(".csv"):
-        raise http_error(400, "Only CSV files are allowed")
+    ext = os.path.splitext(file.filename.lower())[1]
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        allowed = ", ".join(sorted(ALLOWED_UPLOAD_EXTENSIONS))
+        raise http_error(400, f"Unsupported file type. Allowed: {allowed}")
 
 
 def validate_csv_columns(
@@ -228,14 +259,13 @@ def validate_and_import_citizens_iter(
                 )
                 row_errors.append(("DUPLICATE_MOBILE", f"Duplicate mobile number: {mobile}"))
 
-            # Determine if this row should be imported to citizens (keep existing behavior safe):
-            # Require at least a name + mobile; otherwise keep it in staging only.
-            usable_fields = [
-                v for v in normalized.values()
-                if v is not None and str(v).strip() != ""
-            ]
-
-            should_import = len(usable_fields) > 0
+            # Import when normalized fields or raw row cells contain usable data.
+            has_normalized_data = any(
+                v is not None and str(v).strip() != ""
+                for v in normalized.values()
+            )
+            has_raw_data = any(not _cell_empty(row.get(c)) for c in row.index)
+            should_import = has_normalized_data or has_raw_data
             if not should_import and extracted_status != "rejected":
                 partial_rows += 1
                 extracted_status = "partial"
@@ -444,19 +474,66 @@ def process_dataframe_upload(
     }
 
 
+def _chunk_dataframe(df: pd.DataFrame) -> Iterable[pd.DataFrame]:
+    if len(df) <= UPLOAD_CHUNK_SIZE:
+        yield df
+        return
+    for start in range(0, len(df), UPLOAD_CHUNK_SIZE):
+        yield df.iloc[start : start + UPLOAD_CHUNK_SIZE].copy()
+
+
+def process_file_upload(
+    db: Session,
+    file: UploadFile,
+    file_path: str,
+) -> dict:
+    """
+    Parse an uploaded file by extension, then run the standard ingestion pipeline.
+    CSV keeps chunked streaming; other formats load via file_ingestion_service.
+    """
+    filename = file.filename or os.path.basename(file_path)
+    ext = os.path.splitext(filename.lower())[1]
+
+    if ext == ".csv":
+        df, found_columns, missing_columns, column_mapping = validate_csv_columns(file_path)
+        chunk_iter = pd.read_csv(file_path, chunksize=UPLOAD_CHUNK_SIZE)
+        return process_dataframe_upload(
+            db,
+            filename=filename,
+            chunk_iter=chunk_iter,
+            found_columns=found_columns,
+            missing_columns=missing_columns,
+            column_mapping=column_mapping,
+            department_name=None,
+        )
+
+    try:
+        df, file_format, source_type = load_file_as_dataframe(file_path, filename)
+    except Exception as exc:
+        raise http_error(400, f"Failed to parse file: {filename}", str(exc)) from exc
+
+    if df is None or df.empty:
+        raise http_error(400, "No rows found in file", f"File {filename} produced no ingestible rows")
+
+    found_columns = [str(c) for c in df.columns]
+    column_mapping = build_column_mapping(list(df.columns))
+    missing_columns = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+
+    return process_dataframe_upload(
+        db,
+        filename=filename,
+        chunk_iter=_chunk_dataframe(df),
+        found_columns=found_columns,
+        missing_columns=missing_columns,
+        column_mapping=column_mapping,
+        department_name=source_type,
+    )
+
+
 def process_csv_upload(
     db: Session,
     file: UploadFile,
     file_path: str,
 ) -> dict:
-    df, found_columns, missing_columns, column_mapping = validate_csv_columns(file_path)
-    chunk_iter = pd.read_csv(file_path, chunksize=50000)
-    return process_dataframe_upload(
-        db,
-        filename=file.filename or "upload.csv",
-        chunk_iter=chunk_iter,
-        found_columns=found_columns,
-        missing_columns=missing_columns,
-        column_mapping=column_mapping,
-        department_name=None,
-    )
+    """Backward-compatible CSV entry point."""
+    return process_file_upload(db, file, file_path)

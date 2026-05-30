@@ -27,8 +27,8 @@ UNIVERSAL_HEADER_ALIASES: Dict[str, List[str]] = {
   ],
   "mobile": [
     "mobile", "mobile_no", "mobile_number", "mobileno", "phone", "phone_no", "phone_number",
-    "contact", "contact_no", "contact_number", "msisdn", "cell", "cellphone", "telephone",
-    "tel", "whatsapp", "whatsapp_no",
+    "contact", "contact_no", "contact_number", "registered_mobile", "msisdn", "cell",
+    "cellphone", "telephone", "tel", "whatsapp", "whatsapp_no",
   ],
   "district": [
     "district", "district_name", "dist", "city", "city_name", "division", "region",

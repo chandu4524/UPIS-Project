@@ -98,7 +98,7 @@ def process_single_bulk_file(
     try:
         if not is_supported_upload(filename):
             raise ValueError(
-                "Unsupported file type. Allowed: CSV, XLSX, JSON, XML, PDF"
+                "Unsupported file type. Allowed: CSV, XLSX, XLS, PDF, TXT, JSON, XML, PNG, JPG, JPEG"
             )
 
         df, fmt, source_type = load_file_as_dataframe(file_path, filename)

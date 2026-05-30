@@ -1,12 +1,13 @@
 """
-Parse uploaded files (CSV, XLSX, JSON, XML, PDF) into pandas DataFrames.
+Parse uploaded files (CSV, XLSX, JSON, XML, PDF, TXT, images) into pandas DataFrames.
 Auto-detect format and inferred source/department type.
 """
 
 import json
 import xml.etree.ElementTree as ET
+from io import StringIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
@@ -15,7 +16,18 @@ from app.services.header_canonicalization import canonicalize_columns
 
 logger = get_logger("gpip.file_ingestion")
 
-SUPPORTED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".json", ".xml", ".pdf"}
+SUPPORTED_EXTENSIONS = {
+    ".csv",
+    ".xlsx",
+    ".xls",
+    ".pdf",
+    ".txt",
+    ".json",
+    ".xml",
+    ".png",
+    ".jpg",
+    ".jpeg",
+}
 
 
 def detect_file_format(filename: str) -> str:
@@ -30,6 +42,10 @@ def detect_file_format(filename: str) -> str:
         return "xml"
     if ext == ".pdf":
         return "pdf"
+    if ext == ".txt":
+        return "txt"
+    if ext in {".png", ".jpg", ".jpeg"}:
+        return "image"
     return "unknown"
 
 
@@ -72,7 +88,46 @@ def parse_csv(file_path: str) -> pd.DataFrame:
 
 
 def parse_xlsx(file_path: str) -> pd.DataFrame:
-    return pd.read_excel(file_path, engine="openpyxl")
+    ext = Path(file_path).suffix.lower()
+    if ext == ".xlsx":
+        return pd.read_excel(file_path, engine="openpyxl")
+    return pd.read_excel(file_path)
+
+
+def _ocr_result_to_dataframe(result: Dict[str, Any]) -> pd.DataFrame:
+    table_rows = result.get("table_rows") or []
+    if table_rows:
+        max_cols = max(len(r) for r in table_rows)
+        cols = [f"col_{i + 1}" for i in range(max_cols)]
+        padded = [r + [""] * (max_cols - len(r)) for r in table_rows]
+        return pd.DataFrame(padded, columns=cols)
+    text = result.get("extracted_text") or ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if lines:
+        return pd.DataFrame({"text_line": lines})
+    return pd.DataFrame([{"raw_content": text or "[No text extracted]"}])
+
+
+def parse_txt(file_path: str) -> pd.DataFrame:
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    if not content.strip():
+        return pd.DataFrame()
+
+    sample_lines = content.splitlines()[:5]
+    for sep in (",", "\t", "|", ";"):
+        if any(sep in line for line in sample_lines):
+            try:
+                df = pd.read_csv(StringIO(content), sep=sep)
+                if len(df.columns) > 1 and len(df) > 0:
+                    return df
+            except Exception:
+                continue
+
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    if lines:
+        return pd.DataFrame({"text_line": lines})
+    return pd.DataFrame([{"raw_content": content}])
 
 
 def parse_json(file_path: str) -> pd.DataFrame:
@@ -107,18 +162,35 @@ def parse_pdf(file_path: str, filename: str) -> pd.DataFrame:
         from app.services.ocr_service import process_file_ocr
 
         result = process_file_ocr(file_path, filename)
-        table_rows = result.get("table_rows") or []
-        if table_rows:
-            max_cols = max(len(r) for r in table_rows)
-            cols = [f"col_{i+1}" for i in range(max_cols)]
-            padded = [r + [""] * (max_cols - len(r)) for r in table_rows]
-            return pd.DataFrame(padded, columns=cols)
-        text = result.get("extracted_text") or ""
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        return pd.DataFrame({"text_line": lines})
+        return _ocr_result_to_dataframe(result)
     except Exception as exc:
         logger.warning("PDF OCR parse failed for %s: %s", filename, exc)
-        raise
+        return pd.DataFrame(
+            [
+                {
+                    "raw_content": f"[PDF stored for manual review — OCR unavailable: {filename}]",
+                    "source_file": filename,
+                }
+            ]
+        )
+
+
+def parse_image(file_path: str, filename: str) -> pd.DataFrame:
+    try:
+        from app.services.ocr_service import process_file_ocr
+
+        result = process_file_ocr(file_path, filename)
+        return _ocr_result_to_dataframe(result)
+    except Exception as exc:
+        logger.warning("Image OCR parse failed for %s: %s", filename, exc)
+        return pd.DataFrame(
+            [
+                {
+                    "raw_content": f"[Image stored for manual review — OCR unavailable: {filename}]",
+                    "source_file": filename,
+                }
+            ]
+        )
 
 
 def load_file_as_dataframe(file_path: str, filename: str) -> Tuple[pd.DataFrame, str, str]:
@@ -137,6 +209,10 @@ def load_file_as_dataframe(file_path: str, filename: str) -> Tuple[pd.DataFrame,
         df = parse_xml(file_path)
     elif fmt == "pdf":
         df = parse_pdf(file_path, filename)
+    elif fmt == "txt":
+        df = parse_txt(file_path)
+    elif fmt == "image":
+        df = parse_image(file_path, filename)
     else:
         raise ValueError(f"Unsupported file format: {fmt}")
 

@@ -8,7 +8,7 @@ from app.auth.rbac import PERM_UPLOAD_READ, PERM_UPLOAD_WRITE
 from app.services.audit_service import ACTION_UPLOAD_FILE, log_action
 from app.services.upload_service import (
     list_uploads_paginated,
-    process_csv_upload,
+    process_file_upload,
     save_upload_file,
     validate_upload_file,
 )
@@ -41,7 +41,7 @@ def upload_file(
 ):
     validate_upload_file(file)
     file_path = save_upload_file(file)
-    result = process_csv_upload(db, file, file_path)
+    result = process_file_upload(db, file, file_path)
     log_action(
         db,
         username=current_user.username,
@@ -73,7 +73,7 @@ def upload_files(
     for file in files:
         validate_upload_file(file)
         file_path = save_upload_file(file)
-        result = process_csv_upload(db, file, file_path)
+        result = process_file_upload(db, file, file_path)
         log_action(
             db,
             username=current_user.username,
