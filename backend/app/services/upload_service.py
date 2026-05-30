@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 import pandas as pd
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
@@ -113,6 +113,62 @@ def list_uploads_paginated(
 
 def ensure_upload_folder():
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+def _upload_error_message(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            message = str(detail.get("message") or "Upload failed")
+            extra = detail.get("detail")
+            if extra and str(extra).strip():
+                return f"{message}: {extra}"
+            return message
+        return str(detail or exc)
+    return str(exc)
+
+
+def file_upload_item_from_result(filename: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    rows_processed = int(
+        result.get("total_rows")
+        or result.get("staged_rows")
+        or result.get("rows_imported")
+        or 0
+    )
+    return {
+        "file_name": filename,
+        "status": "success",
+        "message": result.get("message") or "Upload completed with validation results",
+        "error": "",
+        "rows_processed": rows_processed,
+        "file_id": result.get("file_id"),
+    }
+
+
+def file_upload_item_from_error(filename: str, exc: Exception) -> Dict[str, Any]:
+    return {
+        "file_name": filename,
+        "status": "failed",
+        "message": "",
+        "error": _upload_error_message(exc),
+        "rows_processed": 0,
+        "file_id": None,
+    }
+
+
+def process_upload_file_item(
+    db: Session,
+    file: UploadFile,
+    file_path: str,
+) -> Dict[str, Any]:
+    """Process one upload file; failures are returned as a failed item, not raised."""
+    filename = file.filename or os.path.basename(file_path)
+    try:
+        validate_upload_file(file)
+        result = process_file_upload(db, file, file_path)
+        return file_upload_item_from_result(filename, result)
+    except Exception as exc:
+        return file_upload_item_from_error(filename, exc)
 
 
 def validate_upload_file(file: UploadFile) -> None:
