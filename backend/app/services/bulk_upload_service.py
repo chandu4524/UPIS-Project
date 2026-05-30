@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.core.logging_config import get_logger
 from app.models.upload_batch import UploadBatch, UploadBatchFile
-from app.services.file_ingestion_service import is_supported_upload, load_file_as_dataframe
+from app.services.file_ingestion_service import (
+    SUPPORTED_FORMATS_MESSAGE,
+    is_supported_upload,
+    load_file_as_dataframe,
+)
 from app.services.upload_service import ensure_upload_folder, process_dataframe_upload, save_upload_file
 
 logger = get_logger("gpip.bulk_upload")
@@ -97,9 +101,7 @@ def process_single_bulk_file(
 
     try:
         if not is_supported_upload(filename):
-            raise ValueError(
-                "Unsupported file type. Allowed: CSV, XLSX, XLS, PDF, TXT, JSON, XML, PNG, JPG, JPEG"
-            )
+            raise ValueError(SUPPORTED_FORMATS_MESSAGE)
 
         df, fmt, source_type = load_file_as_dataframe(file_path, filename)
         item.file_format = fmt

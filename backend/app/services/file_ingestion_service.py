@@ -29,6 +29,22 @@ SUPPORTED_EXTENSIONS = {
     ".jpeg",
 }
 
+SUPPORTED_FORMATS_MESSAGE = (
+    "Supported formats: CSV, Excel, PDF, TXT, JSON, XML, PNG, JPG"
+)
+
+
+def get_upload_extension(filename: str) -> str:
+    return Path(filename or "").suffix.lower()
+
+
+def is_supported_upload(filename: str) -> bool:
+    return get_upload_extension(filename) in SUPPORTED_EXTENSIONS
+
+
+def unsupported_upload_type_message() -> str:
+    return SUPPORTED_FORMATS_MESSAGE
+
 
 def detect_file_format(filename: str) -> str:
     ext = Path(filename or "").suffix.lower()
@@ -214,7 +230,7 @@ def load_file_as_dataframe(file_path: str, filename: str) -> Tuple[pd.DataFrame,
     elif fmt == "image":
         df = parse_image(file_path, filename)
     else:
-        raise ValueError(f"Unsupported file format: {fmt}")
+        raise ValueError(SUPPORTED_FORMATS_MESSAGE)
 
     if df is None or df.empty:
         return pd.DataFrame(), fmt, detect_source_type(filename, [])
@@ -224,5 +240,3 @@ def load_file_as_dataframe(file_path: str, filename: str) -> Tuple[pd.DataFrame,
     return df, fmt, source
 
 
-def is_supported_upload(filename: str) -> bool:
-    return Path(filename or "").suffix.lower() in SUPPORTED_EXTENSIONS

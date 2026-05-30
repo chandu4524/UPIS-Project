@@ -30,22 +30,16 @@ from app.services.header_canonicalization import (
     build_column_mapping,
     canonicalize_columns,
 )
-from app.services.file_ingestion_service import load_file_as_dataframe
+from app.services.file_ingestion_service import (
+    SUPPORTED_EXTENSIONS,
+    SUPPORTED_FORMATS_MESSAGE,
+    is_supported_upload,
+    load_file_as_dataframe,
+)
 
 REQUIRED_COLUMNS = CORE_IMPORT_COLUMNS
 MAX_VALIDATION_ERRORS = 100
-ALLOWED_UPLOAD_EXTENSIONS = {
-    ".csv",
-    ".xlsx",
-    ".xls",
-    ".pdf",
-    ".txt",
-    ".json",
-    ".xml",
-    ".png",
-    ".jpg",
-    ".jpeg",
-}
+ALLOWED_UPLOAD_EXTENSIONS = SUPPORTED_EXTENSIONS
 UPLOAD_CHUNK_SIZE = 50000
 
 DOB_PATTERNS = (
@@ -124,10 +118,8 @@ def ensure_upload_folder():
 def validate_upload_file(file: UploadFile) -> None:
     if not file.filename:
         raise http_error(400, "No file provided")
-    ext = os.path.splitext(file.filename.lower())[1]
-    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
-        allowed = ", ".join(sorted(ALLOWED_UPLOAD_EXTENSIONS))
-        raise http_error(400, f"Unsupported file type. Allowed: {allowed}")
+    if not is_supported_upload(file.filename):
+        raise http_error(400, SUPPORTED_FORMATS_MESSAGE)
 
 
 def validate_csv_columns(
