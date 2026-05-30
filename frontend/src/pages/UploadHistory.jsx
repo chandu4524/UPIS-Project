@@ -32,7 +32,8 @@ export default function UploadHistory() {
     setError('');
     try {
       const data = await fetchUploadHistory({ page: pageNum, pageSize: PAGE_SIZE });
-      setRecords(data.items || []);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setRecords(items);
       setTotal(data.total ?? 0);
       setTotalPages(data.total_pages ?? 0);
       setPage(data.page ?? pageNum);

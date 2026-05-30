@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { SUPPORTED_FORMATS_MESSAGE, UPLOAD_ACCEPT } from '../constants/uploadFormats';
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -13,12 +14,12 @@ function toArray(fileList) {
 }
 
 export default function MultiFileDropZone({
-  accept = '.csv',
+  accept = UPLOAD_ACCEPT,
   disabled = false,
   files = [],
   onFilesChange,
   maxFiles = 30,
-  hint = 'Drag and drop CSV files here, or click to browse',
+  hint = 'Drag and drop files here, or click to browse',
 }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
@@ -113,7 +114,7 @@ export default function MultiFileDropZone({
             </span>
             <p className="dropzone-hint">{hint}</p>
             <span className="dropzone-formats">
-              Accepted: {accept} • Max files: {maxFiles}
+              {SUPPORTED_FORMATS_MESSAGE} • Max files: {maxFiles}
             </span>
           </>
         ) : (

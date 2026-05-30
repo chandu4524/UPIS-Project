@@ -1,8 +1,9 @@
+import { normalizeUploadTypeError } from '../constants/uploadFormats';
+
 /**
  * Extract a user-friendly message from API / network errors.
  */
-export function formatError(err, fallback = 'Something went wrong. Please try again.') {
-  if (!err) return fallback;
+export function formatError(err, fallback = 'Something went wrong. Please try again.') {  if (!err) return fallback;
 
   if (err.code === 'ECONNABORTED') {
     return 'The request timed out. Please check your connection and try again.';
@@ -32,7 +33,7 @@ export function formatError(err, fallback = 'Something went wrong. Please try ag
         return `${data.message} (Found: ${foundCols.join(', ')})`;
       }
     }
-    return data.message;
+    return normalizeUploadTypeError(data.message);
   }
 
   const detail = data?.detail;
@@ -41,7 +42,7 @@ export function formatError(err, fallback = 'Something went wrong. Please try ag
   }
 
   if (typeof detail === 'string') {
-    return detail;
+    return normalizeUploadTypeError(detail);
   }
 
   if (typeof detail === 'object' && detail.message) {

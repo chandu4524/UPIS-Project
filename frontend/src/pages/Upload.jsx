@@ -4,6 +4,11 @@ import MultiFileDropZone from '../components/MultiFileDropZone';
 import Layout from '../components/Layout';
 import Loader from '../components/Loader';
 import Spinner from '../components/Spinner';
+import {
+  SUPPORTED_FORMATS_MESSAGE,
+  UPLOAD_ACCEPT,
+  isAllowedUploadFile,
+} from '../constants/uploadFormats';
 import { uploadCSVFiles } from '../services/uploadService';
 import { triggerAppRefresh } from '../utils/appRefresh';
 import { formatError } from '../utils/formatError';
@@ -20,16 +25,14 @@ export default function Upload() {
 
   const handleUpload = async () => {
     if (!files?.length) {
-      setError('Please select one or more CSV files');
+      setError('Please select one or more files to upload');
       return;
     }
 
-    const invalid = files.find(
-      (f) => !f?.name?.toLowerCase()?.endsWith('.csv')
-    );
+    const invalid = files.find((f) => !isAllowedUploadFile(f));
 
     if (invalid) {
-      setError('Only CSV files are supported');
+      setError(SUPPORTED_FORMATS_MESSAGE);
       return;
     }
 
@@ -97,7 +100,8 @@ export default function Upload() {
           <header className="upload-header">
             <h1>Data Quality Validation Upload</h1>
             <p>
-              Upload multiple CSV files together for validation and processing.
+              Upload multiple files for validation and processing.{' '}
+              {SUPPORTED_FORMATS_MESSAGE}.
             </p>
           </header>
 
@@ -114,7 +118,7 @@ export default function Upload() {
           )}
 
           <MultiFileDropZone
-            accept=".csv"
+            accept={UPLOAD_ACCEPT}
             disabled={loading}
             files={files}
             onFilesChange={setFiles}
@@ -131,7 +135,7 @@ export default function Upload() {
               {loading ? (
                 <Spinner label="Uploading..." inline />
               ) : (
-                'Upload CSV Files'
+                'Upload Files'
               )}
             </button>
           </div>
