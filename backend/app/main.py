@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.analytics_duckdb_api import router as analytics_duckdb_router
 from app.api.assistant_api import router as assistant_router
 from app.api.audit_api import router as audit_router
 from app.api.reports_api import router as reports_router
@@ -32,6 +33,7 @@ from app.core.config import (
 )
 from app.middleware.timeout_middleware import RequestTimeoutMiddleware
 from app.services.demo_seed_service import verify_and_seed_demo_data
+from app.services.duckdb_service import close_connection, initialize_duckdb
 from app.services.health_service import get_health_status, log_startup_diagnostics
 from app.core.exceptions import (
     http_exception_handler,
@@ -62,8 +64,14 @@ async def lifespan(app: FastAPI):
             logger.info("Demo data verification: %s", seed_result)
     finally:
         db.close()
+    try:
+        initialize_duckdb()
+        logger.info("DuckDB analytics engine initialized")
+    except Exception as exc:
+        logger.warning("DuckDB initialization failed (analytics disabled): %s", exc)
     logger.info("GPIP backend ready")
     yield
+    close_connection()
     logger.info("GPIP backend shutdown")
 
 
@@ -115,6 +123,7 @@ app.include_router(upload_router, prefix="/api")
 app.include_router(bulk_upload_router, prefix="/api")
 app.include_router(staging_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
+app.include_router(analytics_duckdb_router, prefix="/api")
 app.include_router(citizen_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")

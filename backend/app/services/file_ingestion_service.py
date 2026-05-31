@@ -5,9 +5,10 @@ Auto-detect format and inferred source/department type.
 
 import json
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -209,7 +210,43 @@ def parse_image(file_path: str, filename: str) -> pd.DataFrame:
         )
 
 
-def load_file_as_dataframe(file_path: str, filename: str) -> Tuple[pd.DataFrame, str, str]:
+def register_ingested_dataframe(
+    df: pd.DataFrame,
+    *,
+    upload_id: int,
+    source_file: str,
+    uploaded_at: Optional[datetime] = None,
+) -> int:
+    """
+    Push a parsed upload dataframe into DuckDB analytics storage.
+    Failures are logged and never block primary ingestion.
+    """
+    try:
+        from app.services.duckdb_service import append_uploaded_data
+
+        return append_uploaded_data(
+            upload_id=int(upload_id),
+            source_file=source_file,
+            df=df,
+            uploaded_at=uploaded_at,
+        )
+    except Exception as exc:
+        logger.warning(
+            "DuckDB analytics sync failed for upload %s (%s): %s",
+            upload_id,
+            source_file,
+            exc,
+        )
+        return 0
+
+
+def load_file_as_dataframe(
+    file_path: str,
+    filename: str,
+    *,
+    upload_id: Optional[int] = None,
+    uploaded_at: Optional[datetime] = None,
+) -> Tuple[pd.DataFrame, str, str]:
     """
     Returns (dataframe, file_format, source_type).
     Applies universal header canonicalization.
@@ -237,6 +274,13 @@ def load_file_as_dataframe(file_path: str, filename: str) -> Tuple[pd.DataFrame,
 
     df, column_mapping = canonicalize_columns(df)
     source = detect_source_type(filename, list(df.columns))
+    if upload_id is not None and not df.empty:
+        register_ingested_dataframe(
+            df,
+            upload_id=upload_id,
+            source_file=filename,
+            uploaded_at=uploaded_at,
+        )
     return df, fmt, source
 
 

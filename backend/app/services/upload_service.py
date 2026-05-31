@@ -35,6 +35,7 @@ from app.services.file_ingestion_service import (
     SUPPORTED_FORMATS_MESSAGE,
     is_supported_upload,
     load_file_as_dataframe,
+    register_ingested_dataframe,
 )
 
 REQUIRED_COLUMNS = CORE_IMPORT_COLUMNS
@@ -456,6 +457,12 @@ def process_dataframe_upload(
             if chunk is None or chunk.empty:
                 continue
             chunk, _ = canonicalize_columns(chunk)
+            register_ingested_dataframe(
+                chunk,
+                upload_id=upload_record.id,
+                source_file=filename,
+                uploaded_at=upload_record.uploaded_at,
+            )
             if preview_rows is None and not chunk.empty:
                 preview_rows = chunk.head(5).to_dict(orient="records")
             for c in REQUIRED_COLUMNS:

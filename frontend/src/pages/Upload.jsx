@@ -57,22 +57,35 @@ export default function Upload() {
     );
 
     try {
-      setMessage(
-        'Uploading files and validating data...'
-      );
+      setMessage('Uploading files and validating data...');
 
-      const responses = await uploadCSVFiles(files);
+      const response = await uploadCSVFiles(files);
+      const fileResults = Array.isArray(response?.items) ? response.items : [];
 
       setResults((prev) =>
-        prev.map((r, idx) => ({
-          ...r,
-          status: 'completed',
-          progress: 100,
-          response: Array.isArray(responses)
-            ? responses[idx]
-            : responses,
-        }))
+        prev.map((r, idx) => {
+          const item = fileResults[idx];
+          const failed = item?.status === 'failed';
+          return {
+            ...r,
+            status: failed ? 'failed' : 'completed',
+            progress: 100,
+            response: item || null,
+            error: failed ? (item?.error || item?.message || 'Upload failed') : null,
+          };
+        })
       );
+
+      const succeeded = fileResults.filter((item) => item?.status === 'success').length;
+      const failed = fileResults.filter((item) => item?.status === 'failed').length;
+
+      if (failed > 0 && succeeded === 0) {
+        setError(`All uploads failed (${failed} file(s)). See details below.`);
+      } else if (failed > 0) {
+        setMessage(`${succeeded} file(s) uploaded successfully, ${failed} failed.`);
+      } else {
+        setMessage(response?.message || 'All files uploaded successfully.');
+      }
 
       triggerAppRefresh();
       setFiles([]);
@@ -163,6 +176,18 @@ export default function Upload() {
                       ? 'Failed'
                       : 'Uploading'}
                   </div>
+
+                  {r.response?.rows_processed != null && r.status === 'completed' && (
+                    <div style={{ marginTop: 8 }}>
+                      Rows processed: {r.response.rows_processed}
+                    </div>
+                  )}
+
+                  {r.response?.message && r.status === 'completed' && (
+                    <div style={{ marginTop: 8, opacity: 0.85 }}>
+                      {r.response.message}
+                    </div>
+                  )}
 
                   {r.error && (
                     <div
