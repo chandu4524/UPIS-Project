@@ -10,6 +10,7 @@ from app.core.logging_config import get_logger
 from app.models.citizen import Citizen
 from app.models.person_relationship import PersonRelationship
 from app.models.person_source import PersonSource
+from app.services.person360_profile import build_person_360_profile, mask_profile_360_fields
 
 logger = get_logger("gpip.person360")
 
@@ -210,7 +211,7 @@ def get_search_summary(db: Session) -> dict:
     }
 
 
-def get_person_profile(db: Session, citizen_id: int) -> dict:
+def get_person_profile(db: Session, citizen_id: int, *, mask_mobile: bool = True) -> dict:
     citizen = db.query(Citizen).filter(Citizen.id == int(citizen_id)).first()
     if not citizen:
         raise http_error(404, "Person not found")
@@ -231,12 +232,27 @@ def get_person_profile(db: Session, citizen_id: int) -> dict:
     )
     rel_summary = Counter([r.relationship_type for r in rels if r.relationship_type])
 
+    citizen_dict = _citizen_to_public_dict(citizen) if mask_mobile else {
+        "id": citizen.id,
+        "full_name": citizen.full_name,
+        "mobile": citizen.mobile,
+        "district": citizen.district,
+        "village": citizen.village,
+        "dob": citizen.dob,
+        "created_at": citizen.created_at.isoformat() if getattr(citizen, "created_at", None) else None,
+    }
+
+    profile_360 = build_person_360_profile(db, citizen)
+    if mask_mobile:
+        profile_360 = mask_profile_360_fields(profile_360)
+
     return {
-        "citizen": _citizen_to_public_dict(citizen),
+        "citizen": citizen_dict,
         "profile_confidence": profile_conf,
         "source_count": len(sources),
         "linked_departments": departments,
         "relationship_summary": dict(rel_summary),
+        "profile_360": profile_360,
     }
 
 

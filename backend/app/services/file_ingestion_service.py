@@ -217,7 +217,7 @@ def register_ingested_dataframe(
     source_file: str,
     uploaded_at: Optional[datetime] = None,
     department_name: Optional[str] = None,
-) -> int:
+) -> Dict[str, Any]:
     """
     Push a parsed upload dataframe into DuckDB analytics storage.
     Failures are logged and never block primary ingestion.
@@ -228,20 +228,22 @@ def register_ingested_dataframe(
         payload = df.copy()
         payload["department_name"] = (department_name or "GENERAL").strip() or "GENERAL"
 
-        return append_uploaded_data(
+        rows_synced = append_uploaded_data(
             upload_id=int(upload_id),
             source_file=source_file,
             df=payload,
             uploaded_at=uploaded_at,
         )
+        return {"rows_synced": rows_synced, "warning": None}
     except Exception as exc:
+        warning = f"DuckDB analytics sync failed: {exc}"
         logger.warning(
             "DuckDB analytics sync failed for upload %s (%s): %s",
             upload_id,
             source_file,
             exc,
         )
-        return 0
+        return {"rows_synced": 0, "warning": warning}
 
 
 def load_file_as_dataframe(

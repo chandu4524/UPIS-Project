@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.auth.deps import CurrentUser, require_permission
 from app.auth.rbac import PERM_DASHBOARD_ANALYTICS
 from app.core.exceptions import http_error
+from app.core.logging_config import get_logger
 from app.services.duckdb_analytics_service import (
     get_dashboard_summary,
     get_source_distribution,
@@ -10,6 +11,8 @@ from app.services.duckdb_analytics_service import (
     get_validation_distribution,
 )
 from app.services.duckdb_service import duckdb_health
+
+logger = get_logger("gpip.analytics_api")
 
 router = APIRouter(prefix="/analytics", tags=["Analytics Dashboard"])
 
@@ -42,13 +45,23 @@ def analytics_dashboard_summary(
 def analytics_source_distribution(
     current_user: CurrentUser = Depends(require_permission(PERM_DASHBOARD_ANALYTICS)),
 ):
-    _ensure_duckdb_ready()
-    items = get_source_distribution()
+    """
+    Source distribution is isolated from the global DuckDB health gate so a stale
+    connection state on this query does not block the endpoint with 503.
+    """
+    items, warning = get_source_distribution()
+    if warning:
+        logger.warning("source-distribution returning empty items: %s", warning)
     return {
         "success": True,
-        "message": "Source distribution fetched successfully",
+        "message": (
+            "Source distribution fetched with warnings"
+            if warning
+            else "Source distribution fetched successfully"
+        ),
         "logged_in_user": current_user.username,
         "items": items,
+        "warning": warning,
     }
 
 

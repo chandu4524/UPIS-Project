@@ -16,7 +16,12 @@ from app.core.exceptions import http_error
 from app.models.citizen import Citizen
 from app.models.person_staging import PersonStaging
 from app.models.upload import Upload
-from app.services.citizen_service import _load_existing_mobiles
+from app.services.citizen_service import (
+    _load_existing_mobiles,
+    get_citizen_by_mobile,
+    mobile_lookup_key,
+    safe_insert_citizen,
+)
 from app.services.normalization_service import (
     empty_normalization_summary,
     normalize_citizen_row,
@@ -129,16 +134,59 @@ def _upload_error_message(exc: Exception) -> str:
     return str(exc)
 
 
+def _build_analytics_warning(
+    chunk_warnings: List[str],
+    summary_warning: Optional[str],
+) -> Optional[str]:
+    parts: List[str] = []
+    if chunk_warnings:
+        unique = list(dict.fromkeys(w for w in chunk_warnings if w))
+        if len(unique) == 1:
+            parts.append(unique[0])
+        else:
+            parts.append(f"DuckDB row sync failed for {len(chunk_warnings)} chunk(s)")
+    if summary_warning:
+        parts.append(summary_warning)
+    return "; ".join(parts) if parts else None
+
+
 def file_upload_item_from_result(filename: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    upload_success = bool(result.get("upload_success", result.get("success", True)))
+    validation = result.get("validation_results") or {
+        "total_rows": result.get("total_rows"),
+        "valid_rows": result.get("valid_rows"),
+        "invalid_rows": result.get("invalid_rows"),
+        "duplicate_rows": result.get("duplicate_rows"),
+        "duplicate_records": result.get("duplicate_records"),
+        "inserted_records": result.get("inserted_records"),
+        "skipped_duplicates": result.get("skipped_duplicates"),
+        "rows_imported": result.get("rows_imported"),
+        "rows_skipped": result.get("rows_skipped"),
+        "staged_rows": result.get("staged_rows"),
+        "rejected_rows": result.get("rejected_rows"),
+        "partial_rows": result.get("partial_rows"),
+    }
     rows_processed = int(
-        result.get("total_rows")
+        validation.get("total_rows")
+        or result.get("total_rows")
         or result.get("staged_rows")
         or result.get("rows_imported")
         or 0
     )
+    skipped_duplicates = int(validation.get("skipped_duplicates") or validation.get("duplicate_rows") or 0)
+    validation_warning = None
+    if skipped_duplicates > 0:
+        validation_warning = (
+            f"{skipped_duplicates} duplicate mobile number(s) skipped; "
+            "upload completed successfully."
+        )
     return {
         "file_name": filename,
-        "status": "success",
+        "status": "success" if upload_success else "failed",
+        "upload_success": upload_success,
+        "validation_results": validation,
+        "validation_warning": result.get("validation_warning") or validation_warning,
+        "analytics_warning": result.get("analytics_warning"),
         "message": result.get("message") or "Upload completed with validation results",
         "error": "",
         "rows_processed": rows_processed,
@@ -150,6 +198,9 @@ def file_upload_item_from_error(filename: str, exc: Exception) -> Dict[str, Any]
     return {
         "file_name": filename,
         "status": "failed",
+        "upload_success": False,
+        "validation_results": None,
+        "analytics_warning": None,
         "message": "",
         "error": _upload_error_message(exc),
         "rows_processed": 0,
@@ -248,7 +299,8 @@ def validate_and_import_citizens_iter(
     valid_rows = 0
     invalid_rows = 0
     duplicate_rows = 0
-    citizens_to_add: List[Citizen] = []
+    inserted_records = 0
+    skipped_duplicates = 0
     staging_to_add: List[Any] = []
     norm_summary = empty_normalization_summary()
     preview = norm_summary["preview"]
@@ -288,27 +340,36 @@ def validate_and_import_citizens_iter(
             if all(_cell_empty(row.get(c)) for c in row.index):
                 row_errors.append(("EMPTY_ROW", "Row contains no usable data"))
 
-            extracted_status = "staged"
-            if row_errors:
+            mobile_key = mobile_lookup_key(normalized.get("mobile"))
+            is_duplicate = False
+            if mobile_key:
+                if mobile_key in existing_mobiles or mobile_key in seen_in_file:
+                    is_duplicate = True
+                else:
+                    existing_citizen = get_citizen_by_mobile(db, mobile_key)
+                    if existing_citizen:
+                        is_duplicate = True
+                        existing_mobiles.add(mobile_key)
+
+            if is_duplicate:
+                duplicate_rows += 1
+                skipped_duplicates += 1
+                duplicate_message = f"Duplicate mobile number: {mobile_key}"
+                row_errors.append(("DUPLICATE_MOBILE", duplicate_message))
+                _append_error(
+                    errors,
+                    row_number,
+                    "DUPLICATE_MOBILE",
+                    duplicate_message,
+                )
+
+            extracted_status = "duplicate" if is_duplicate else "staged"
+            if row_errors and not is_duplicate:
                 invalid_rows += 1
                 rejected_rows += 1
                 extracted_status = "rejected"
                 for error_type, description in row_errors:
                     _append_error(errors, row_number, error_type, description)
-
-            mobile = normalized.get("mobile")
-            # Duplicate detection only when a mobile exists
-            if mobile and (mobile in existing_mobiles or mobile in seen_in_file):
-                duplicate_rows += 1
-                rejected_rows += 1
-                extracted_status = "rejected"
-                _append_error(
-                    errors,
-                    row_number,
-                    "DUPLICATE_MOBILE",
-                    f"Duplicate mobile number: {mobile}",
-                )
-                row_errors.append(("DUPLICATE_MOBILE", f"Duplicate mobile number: {mobile}"))
 
             # Import when normalized fields or raw row cells contain usable data.
             has_normalized_data = any(
@@ -317,11 +378,10 @@ def validate_and_import_citizens_iter(
             )
             has_raw_data = any(not _cell_empty(row.get(c)) for c in row.index)
             should_import = has_normalized_data or has_raw_data
-            if not should_import and extracted_status != "rejected":
+            if not should_import and extracted_status not in ("rejected", "duplicate"):
                 partial_rows += 1
                 extracted_status = "partial"
 
-            # Always store staging row (raw + normalized + errors + confidence)
             validation_payload = [
                 {"error_type": et, "description": desc} for et, desc in row_errors
             ]
@@ -329,7 +389,11 @@ def validate_and_import_citizens_iter(
                 upload_batch_id=int(upload_batch_id or 0),
                 row_number=int(row_number),
                 raw_row=row_dict,
-                normalized={**normalized, "matching_key": norm.get("matching_key"), "normalized_name": normalized.get("full_name")},
+                normalized={
+                    **normalized,
+                    "matching_key": norm.get("matching_key"),
+                    "normalized_name": normalized.get("full_name"),
+                },
                 matching_key=norm.get("matching_key"),
                 validation_errors=validation_payload,
                 extraction_status=extracted_status,
@@ -337,10 +401,15 @@ def validate_and_import_citizens_iter(
                 department_name=department_name,
             )
             staging_to_add.append(staging)
-            confidence_summary[staging.confidence_level] = confidence_summary.get(staging.confidence_level, 0) + 1
+            confidence_summary[staging.confidence_level] = confidence_summary.get(
+                staging.confidence_level, 0
+            ) + 1
             staged_rows += 1
 
-            if extracted_status == "rejected":
+            if mobile_key:
+                seen_in_file.add(mobile_key)
+
+            if extracted_status in ("rejected", "duplicate"):
                 continue
 
             if norm["changes"]["name_changed"]:
@@ -370,43 +439,49 @@ def validate_and_import_citizens_iter(
             if norm.get("matching_key"):
                 norm_summary["matching_keys_generated"] += 1
 
-            citizen = Citizen(
-                full_name=normalized.get("full_name") or "Unknown",
-                mobile=mobile,
-                district=normalized.get("district"),
-                village=normalized.get("village"),
-                dob=normalized.get("dob"),
-            )
             if should_import:
-                citizens_to_add.append(citizen)
-            if mobile:
-                existing_mobiles.add(mobile)
-                seen_in_file.add(mobile)
-            if should_import:
-                valid_rows += 1
+                citizen = Citizen(
+                    full_name=normalized.get("full_name") or "Unknown",
+                    mobile=mobile_key,
+                    district=normalized.get("district"),
+                    village=normalized.get("village"),
+                    dob=normalized.get("dob"),
+                )
+                if safe_insert_citizen(db, citizen):
+                    inserted_records += 1
+                    valid_rows += 1
+                    if mobile_key:
+                        existing_mobiles.add(mobile_key)
+                else:
+                    duplicate_rows += 1
+                    skipped_duplicates += 1
+                    _append_error(
+                        errors,
+                        row_number,
+                        "DUPLICATE_MOBILE",
+                        f"Duplicate mobile number: {mobile_key}",
+                    )
 
-            # Commit in batches so very large files don't blow memory
-            if len(citizens_to_add) >= 5000 or len(staging_to_add) >= 5000:
-                db.add_all(citizens_to_add)
+            if len(staging_to_add) >= 5000:
                 db.add_all(staging_to_add)
                 db.commit()
-                citizens_to_add.clear()
                 staging_to_add.clear()
 
-    if citizens_to_add:
-        db.add_all(citizens_to_add)
     if staging_to_add:
         db.add_all(staging_to_add)
-        db.commit()
+    db.commit()
 
     return {
         "total_rows": total_rows,
         "valid_rows": valid_rows,
         "invalid_rows": invalid_rows,
         "duplicate_rows": duplicate_rows,
+        "duplicate_records": duplicate_rows,
+        "inserted_records": inserted_records,
+        "skipped_duplicates": skipped_duplicates,
         "errors": errors,
-        "rows_imported": valid_rows,
-        "rows_skipped": invalid_rows + duplicate_rows,
+        "rows_imported": inserted_records,
+        "rows_skipped": invalid_rows + skipped_duplicates,
         "normalization": norm_summary,
         "staged_rows": staged_rows,
         "rejected_rows": rejected_rows,
@@ -452,6 +527,7 @@ def process_dataframe_upload(
 
     missing_value_counts: Dict[str, int] = {c: 0 for c in REQUIRED_COLUMNS}
     preview_rows: Optional[List[Dict[str, Any]]] = None
+    analytics_chunk_warnings: List[str] = []
 
     def _normalized_chunks() -> Iterable[pd.DataFrame]:
         nonlocal preview_rows
@@ -459,13 +535,15 @@ def process_dataframe_upload(
             if chunk is None or chunk.empty:
                 continue
             chunk, _ = canonicalize_columns(chunk)
-            register_ingested_dataframe(
+            sync_result = register_ingested_dataframe(
                 chunk,
                 upload_id=upload_record.id,
                 source_file=filename,
                 uploaded_at=upload_record.uploaded_at,
                 department_name=department_name,
             )
+            if sync_result.get("warning"):
+                analytics_chunk_warnings.append(sync_result["warning"])
             if preview_rows is None and not chunk.empty:
                 preview_rows = chunk.head(5).to_dict(orient="records")
             for c in REQUIRED_COLUMNS:
@@ -484,18 +562,28 @@ def process_dataframe_upload(
     upload_record.uploaded_rows = rows_imported
     db.commit()
 
+    summary_warning: Optional[str] = None
     try:
         from app.services.duckdb_analytics_service import sync_upload_summary
 
-        sync_upload_summary(
+        summary_warning = sync_upload_summary(
             upload_id=upload_record.id,
             source_file=filename,
             uploaded_at=upload_record.uploaded_at,
             department_name=department_name,
             validation=validation,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        summary_warning = f"DuckDB summary sync failed: {exc}"
+
+    analytics_warning = _build_analytics_warning(analytics_chunk_warnings, summary_warning)
+    skipped_duplicates = int(validation.get("skipped_duplicates") or 0)
+    validation_warning = None
+    if skipped_duplicates > 0:
+        validation_warning = (
+            f"{skipped_duplicates} duplicate mobile number(s) skipped; "
+            "upload completed successfully."
+        )
 
     try:
         candidate_stats = generate_candidates_for_upload(db, upload_record.id)
@@ -519,8 +607,25 @@ def process_dataframe_upload(
     }
 
     return {
+        "upload_success": True,
         "success": True,
         "message": "Upload completed with validation results",
+        "analytics_warning": analytics_warning,
+        "validation_warning": validation_warning,
+        "validation_results": {
+            "total_rows": validation["total_rows"],
+            "valid_rows": validation["valid_rows"],
+            "invalid_rows": validation["invalid_rows"],
+            "duplicate_rows": validation["duplicate_rows"],
+            "duplicate_records": validation.get("duplicate_records", validation["duplicate_rows"]),
+            "inserted_records": validation.get("inserted_records", rows_imported),
+            "skipped_duplicates": skipped_duplicates,
+            "rows_imported": rows_imported,
+            "rows_skipped": validation["rows_skipped"],
+            "staged_rows": validation.get("staged_rows", 0),
+            "rejected_rows": validation.get("rejected_rows", 0),
+            "partial_rows": validation.get("partial_rows", 0),
+        },
         "file_id": upload_record.id,
         "filename": filename,
         "preview_data": preview_rows or [],
@@ -530,6 +635,9 @@ def process_dataframe_upload(
         "valid_rows": validation["valid_rows"],
         "invalid_rows": validation["invalid_rows"],
         "duplicate_rows": validation["duplicate_rows"],
+        "duplicate_records": validation.get("duplicate_records", validation["duplicate_rows"]),
+        "inserted_records": validation.get("inserted_records", rows_imported),
+        "skipped_duplicates": skipped_duplicates,
         "errors": validation["errors"],
         "normalization": validation.get("normalization", empty_normalization_summary()),
         "required_columns": REQUIRED_COLUMNS,

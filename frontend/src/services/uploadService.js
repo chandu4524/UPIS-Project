@@ -36,9 +36,12 @@ export const uploadCSVWithProgress = async (file, onProgress) => {
   return data;
 };
 
-export const uploadCSVFiles = async (files) => {
+export const uploadCSVFiles = async (files, { dataSourceId } = {}) => {
   const formData = new FormData();
   (files || []).forEach((f) => formData.append('files', f));
+  if (dataSourceId) {
+    formData.append('data_source_id', String(dataSourceId));
+  }
 
   const { data } = await api.post('/upload-files', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

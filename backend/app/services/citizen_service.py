@@ -4,9 +4,11 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 from sqlalchemy import asc, desc, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.citizen import Citizen
+from app.services.normalization_service import normalize_phone
 
 SORT_COLUMNS = {
     "full_name": Citizen.full_name,
@@ -27,6 +29,44 @@ def _normalize_mobile(value) -> str:
     if text.endswith(".0") and text[:-2].isdigit():
         return text[:-2]
     return text
+
+
+def mobile_lookup_key(value) -> Optional[str]:
+    """Canonical mobile key for duplicate detection; None when empty."""
+    key = normalize_phone(value)
+    return key or None
+
+
+def get_citizen_by_mobile(db: Session, mobile) -> Optional[Citizen]:
+    """Find an existing citizen by normalized mobile number."""
+    key = mobile_lookup_key(mobile)
+    if not key:
+        return None
+
+    match = db.query(Citizen).filter(Citizen.mobile == key).first()
+    if match:
+        return match
+
+    for citizen in db.query(Citizen).filter(Citizen.mobile.isnot(None), Citizen.mobile != "").all():
+        if mobile_lookup_key(citizen.mobile) == key:
+            return citizen
+    return None
+
+
+def safe_insert_citizen(db: Session, citizen: Citizen) -> bool:
+    """
+    Insert one citizen using a savepoint so duplicate mobile never aborts the upload.
+    Returns True when inserted, False when skipped as duplicate.
+    """
+    nested = db.begin_nested()
+    try:
+        db.add(citizen)
+        db.flush()
+        nested.commit()
+        return True
+    except IntegrityError:
+        nested.rollback()
+        return False
 
 
 def citizen_to_dict(citizen: Citizen) -> dict:
@@ -235,9 +275,14 @@ def search_citizens(
     return result["items"]
 
 
-def _load_existing_mobiles(db: Session) -> set:
+def _load_existing_mobiles(db: Session) -> Set[str]:
     rows = db.query(Citizen.mobile).all()
-    return {_normalize_mobile(m[0]) for m in rows if m[0]}
+    keys: Set[str] = set()
+    for (mobile,) in rows:
+        key = mobile_lookup_key(mobile)
+        if key:
+            keys.add(key)
+    return keys
 
 
 def import_citizens_from_dataframe(db: Session, df: pd.DataFrame) -> Tuple[int, int]:
@@ -251,11 +296,11 @@ def import_citizens_from_dataframe(db: Session, df: pd.DataFrame) -> Tuple[int, 
     seen_in_file: set = set()
 
     for _, row in df.iterrows():
-        mobile = _normalize_mobile(row.get("mobile"))
-        if not mobile:
+        mobile_key = mobile_lookup_key(row.get("mobile"))
+        if not mobile_key:
             skipped += 1
             continue
-        if mobile in existing_mobiles or mobile in seen_in_file:
+        if mobile_key in existing_mobiles or mobile_key in seen_in_file:
             skipped += 1
             continue
 
@@ -266,14 +311,17 @@ def import_citizens_from_dataframe(db: Session, df: pd.DataFrame) -> Tuple[int, 
 
         citizen = Citizen(
             full_name=full_name,
-            mobile=mobile,
+            mobile=mobile_key,
             district=str(row.get("district", "") or "").strip() or None,
             village=str(row.get("village", "") or "").strip() or None,
             dob=str(row.get("dob", "") or "").strip() or None,
         )
-        db.add(citizen)
-        existing_mobiles.add(mobile)
-        seen_in_file.add(mobile)
+        if not safe_insert_citizen(db, citizen):
+            skipped += 1
+            continue
+
+        existing_mobiles.add(mobile_key)
+        seen_in_file.add(mobile_key)
         imported += 1
 
     if imported:

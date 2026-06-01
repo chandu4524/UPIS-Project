@@ -13,6 +13,12 @@ const FIELD_LABELS = {
   district: 'District',
   village: 'Village',
   father_name: 'Father name',
+  consumer_id: 'LPG / Consumer no',
+  connection_no: 'Connection no',
+  aadhaar: 'Aadhaar ref',
+  customer_id: 'Customer ID',
+  exact_match: 'Exact match',
+  source_record: 'Source record',
 };
 
 const SUGGEST_DEBOUNCE_MS = 280;
@@ -73,6 +79,8 @@ export default function IntelligenceSearch() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [stagingResults, setStagingResults] = useState([]);
+  const [ambiguousGroups, setAmbiguousGroups] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [total, setTotal] = useState(0);
   const [searchedQuery, setSearchedQuery] = useState('');
@@ -88,6 +96,8 @@ export default function IntelligenceSearch() {
     const q = (searchText || '').trim();
     if (!q) {
       setResults([]);
+      setStagingResults([]);
+      setAmbiguousGroups([]);
       setSuggestions([]);
       setTotal(0);
       setSearchedQuery('');
@@ -109,6 +119,8 @@ export default function IntelligenceSearch() {
         setSuggestions(data.suggestions || []);
       } else {
         setResults(data.results || []);
+        setStagingResults(data.staging_results || []);
+        setAmbiguousGroups(data.ambiguous_groups || []);
         setSuggestions(data.suggestions || []);
         setTotal(data.total ?? (data.results || []).length);
         setSearchedQuery(data.query || q);
@@ -122,6 +134,8 @@ export default function IntelligenceSearch() {
       if (!forSuggestions) {
         setError(formatError(err, 'Intelligence search failed'));
         setResults([]);
+        setStagingResults([]);
+        setAmbiguousGroups([]);
         setTotal(0);
       }
     } finally {
@@ -163,7 +177,74 @@ export default function IntelligenceSearch() {
   };
 
   const hasSearched = Boolean(searchedQuery);
-  const noResults = hasSearched && !loading && results.length === 0 && !error;
+  const noResults =
+    hasSearched &&
+    !loading &&
+    results.length === 0 &&
+    stagingResults.length === 0 &&
+    ambiguousGroups.length === 0 &&
+    !error;
+
+  const renderResultCard = (row, keyPrefix = 'r') => (
+    <article key={`${keyPrefix}-${row.id || row.staging_id}`} className="intel-result-card">
+      <header className="intel-result-header">
+        <h4 className="intel-result-name">{renderFieldValue(row, 'full_name')}</h4>
+        <span className={relevanceBadgeClass(row.relevance_score)}>
+          {formatRelevance(row.relevance_score)} match
+        </span>
+      </header>
+
+      {row.match_type === 'staging' && (
+        <p className="intel-staging-note">
+          Staging record · {row.department_name || row.source_name || 'Upload'}
+          {row.source_id ? ` · ID ${row.source_id}` : ''}
+        </p>
+      )}
+
+      <div className="intel-matched-tags" aria-label="Matched fields">
+        {(row.matched_fields || []).map((field) => (
+          <span key={field} className="intel-field-tag">
+            {FIELD_LABELS[field] || field}
+          </span>
+        ))}
+      </div>
+
+      <div className="intel-result-fields">
+        {['mobile', 'district', 'village', 'father_name'].map((field) => {
+          const show = row[field] || row.matched_fields?.includes(field);
+          if (!show) return null;
+          return (
+            <div key={field} className="intel-field-row">
+              <span className="intel-field-label">{FIELD_LABELS[field]}:</span>
+              <span className="intel-field-value">
+                {renderFieldValue(row, field, accessFlags.sensitive_fields_masked)}
+              </span>
+            </div>
+          );
+        })}
+        {row.source_id && (
+          <div className="intel-field-row">
+            <span className="intel-field-label">Source ID:</span>
+            <span className="intel-field-value">{row.source_id}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="intel-result-actions">
+        {row.id || row.citizen_id ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => navigate(`/person-profile/${row.id || row.citizen_id}`)}
+          >
+            View 360 profile
+          </button>
+        ) : (
+          <span className="intel-unlinked-label">Upload record — link via manual review</span>
+        )}
+      </div>
+    </article>
+  );
 
   return (
     <Layout>
@@ -171,8 +252,9 @@ export default function IntelligenceSearch() {
         <section className="intel-search-intro card">
           <h2>Advanced intelligence search</h2>
           <p>
-            Fuzzy matching across name, mobile, district, village, and father name.
-            Tolerates typos and partial queries — e.g. Chndu finds Chandu, Vizg matches Visakhapatnam.
+            Search across citizen registry, upload staging, and source identifiers (LPG consumer
+            no, Aadhaar ref, mobile, and all uploaded fields). Fuzzy name matching with duplicate-name
+            disambiguation.
           </p>
         </section>
 
@@ -242,63 +324,46 @@ export default function IntelligenceSearch() {
           )}
         </section>
 
-        {results.length > 0 && (
+        {ambiguousGroups.length > 0 && (
+          <section className="intel-ambiguous-section card">
+            <h3>Multiple matching profiles found</h3>
+            <p className="intel-results-meta">
+              Same name matched different people. Select the correct profile — records are not merged
+              automatically.
+            </p>
+            {ambiguousGroups.map((group) => (
+              <div key={group.normalized_name} className="intel-ambiguous-group">
+                <h4>{group.display_name || group.normalized_name}</h4>
+                <div className="intel-results-grid">
+                  {(group.candidates || []).map((candidate) =>
+                    renderResultCard(
+                      {
+                        ...candidate,
+                        id: candidate.citizen_id,
+                        matched_fields: candidate.matched_fields || ['full_name'],
+                      },
+                      `amb-${group.normalized_name}`
+                    )
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {(results.length > 0 || stagingResults.length > 0) && (
           <section className="intel-results-section card">
             <div className="intel-results-title-row">
               <h3>Ranked results</h3>
               <SensitiveAccessBadge {...accessFlags} />
             </div>
             <p className="intel-results-meta">
-              Showing {results.length} of {total} match{total === 1 ? '' : 'es'} for &ldquo;{searchedQuery}&rdquo;
+              Showing {results.length + stagingResults.length} of {total} match
+              {total === 1 ? '' : 'es'} for &ldquo;{searchedQuery}&rdquo;
             </p>
             <div className="intel-results-grid">
-              {results.map((row) => (
-                <article key={row.id} className="intel-result-card">
-                  <header className="intel-result-header">
-                    <h4 className="intel-result-name">
-                      {renderFieldValue(row, 'full_name')}
-                    </h4>
-                    <span className={relevanceBadgeClass(row.relevance_score)}>
-                      {formatRelevance(row.relevance_score)} match
-                    </span>
-                  </header>
-
-                  <div className="intel-matched-tags" aria-label="Matched fields">
-                    {(row.matched_fields || []).map((field) => (
-                      <span key={field} className="intel-field-tag">
-                        {FIELD_LABELS[field] || field}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="intel-result-fields">
-                    {['mobile', 'district', 'village', 'father_name'].map((field) => {
-                      const show = row[field] || row.matched_fields?.includes(field);
-                      if (!show) return null;
-                      return (
-                        <div key={field} className="intel-field-row">
-                          <span className="intel-field-label">
-                            {FIELD_LABELS[field]}:
-                          </span>
-                          <span className="intel-field-value">
-                            {renderFieldValue(row, field, accessFlags.sensitive_fields_masked)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="intel-result-actions">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => navigate(`/person-profile/${row.id}`)}
-                    >
-                      View profile
-                    </button>
-                  </div>
-                </article>
-              ))}
+              {results.map((row) => renderResultCard(row))}
+              {stagingResults.map((row) => renderResultCard(row, 's'))}
             </div>
           </section>
         )}

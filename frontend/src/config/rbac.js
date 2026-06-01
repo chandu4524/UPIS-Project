@@ -120,9 +120,11 @@ export function hasPermission(role, permission) {
 
 export const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: '▣', permission: PERM.DASHBOARD },
+  { to: '/analytics-dashboard', label: 'Analytics Dashboard', icon: '📈', permission: PERM.ANALYTICS },
   { to: '/upload', label: 'File Upload', icon: '↑', permission: PERM.UPLOAD_WRITE },
   { to: '/ocr-processing', label: 'OCR Processing', icon: '◎', permission: PERM.OCR },
   { to: '/template-mapping', label: 'Template Mapping', icon: '⇄', permission: PERM.TEMPLATE },
+  { to: '/data-sources', label: 'Data Sources', icon: '⎔', permission: PERM.TEMPLATE },
   { to: '/upload-history', label: 'Upload History', icon: '◷', permission: PERM.UPLOAD_READ },
   { to: '/citizens', label: 'Citizen Records', icon: '☰', permission: PERM.CITIZENS },
   { to: '/intelligence-search', label: 'Intelligence Search', icon: '⌕', permission: PERM.SEARCH },
@@ -135,9 +137,11 @@ export const NAV_ITEMS = [
 
 const ROUTE_PERMISSIONS = [
   { pattern: /^\/dashboard$/, permission: PERM.DASHBOARD },
+  { pattern: /^\/analytics-dashboard$/, permission: PERM.ANALYTICS },
   { pattern: /^\/upload$/, permission: PERM.UPLOAD_WRITE },
   { pattern: /^\/upload-history$/, permission: PERM.UPLOAD_READ },
   { pattern: /^\/template-mapping$/, permission: PERM.TEMPLATE },
+  { pattern: /^\/data-sources$/, permission: PERM.TEMPLATE },
   { pattern: /^\/ocr-processing$/, permission: PERM.OCR },
   { pattern: /^\/citizens$/, permission: PERM.CITIZENS },
   { pattern: /^\/intelligence-search$/, permission: PERM.SEARCH },

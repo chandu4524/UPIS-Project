@@ -280,6 +280,36 @@
   margin-top: 0.75rem;
 }
 
+.intel-ambiguous-section {
+  border-top: 4px solid #c9a227;
+}
+
+.intel-ambiguous-section h3 {
+  color: var(--gov-navy);
+  margin-bottom: 0.5rem;
+}
+
+.intel-ambiguous-group {
+  margin-top: 1.25rem;
+}
+
+.intel-ambiguous-group h4 {
+  margin: 0 0 0.75rem;
+  color: var(--gov-navy);
+}
+
+.intel-staging-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--gov-muted);
+}
+
+.intel-unlinked-label {
+  font-size: 0.82rem;
+  color: var(--gov-muted);
+  font-style: italic;
+}
+
 @media (max-width: 640px) {
   .intel-results-grid {
     grid-template-columns: 1fr;

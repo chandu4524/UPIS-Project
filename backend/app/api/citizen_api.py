@@ -18,6 +18,8 @@ from app.services.citizen_service import (
     get_citizen_by_id,
     search_citizens_paginated,
 )
+from app.services.person360_service import get_person_profile
+from app.services.sensitive_access_service import can_view_sensitive_fields
 from app.services.masking_service import sensitive_access_meta
 from app.services.sensitive_access_service import (
     prepare_citizen_list_response,
@@ -114,6 +116,41 @@ def get_citizen(
         "message": "Citizen profile fetched successfully",
         "logged_in_user": current_user.username,
         "citizen": citizen_data,
+        **sensitive_access_meta(current_user.role),
+    }
+
+
+@router.get("/citizens/{citizen_id}/profile-360")
+def get_citizen_profile_360(
+    citizen_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_permission(PERM_CITIZENS_READ)),
+):
+    log_action(
+        db,
+        username=current_user.username,
+        action_type=ACTION_VIEW_PROFILE,
+        entity_type="citizen",
+        entity_id=str(citizen_id),
+    )
+    can_view = can_view_sensitive_fields(current_user.role)
+    profile = get_person_profile(db, citizen_id, mask_mobile=not can_view)
+    citizen_data = prepare_citizen_record(
+        db,
+        profile.get("citizen") or {},
+        current_user,
+        log_context=f"profile360:{citizen_id}",
+    )
+    return {
+        "success": True,
+        "message": "Person 360 profile fetched successfully",
+        "logged_in_user": current_user.username,
+        "citizen": citizen_data,
+        "profile_confidence": profile.get("profile_confidence"),
+        "source_count": profile.get("source_count"),
+        "linked_departments": profile.get("linked_departments"),
+        "relationship_summary": profile.get("relationship_summary"),
+        "profile_360": profile.get("profile_360"),
         **sensitive_access_meta(current_user.role),
     }
 

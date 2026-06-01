@@ -4,9 +4,11 @@ import { getStoredRoleLabel, getStoredUsername, logout } from '../services/authS
 
 const PAGE_TITLES = {
   '/dashboard': 'Secure Dashboard',
+  '/analytics-dashboard': 'Analytics Dashboard',
   '/upload': 'Intelligence File Upload',
   '/ocr-processing': 'OCR Processing',
   '/template-mapping': 'Template Mapping',
+  '/data-sources': 'Data Sources',
   '/upload-history': 'Upload History',
   '/citizens': 'Citizen Records',
   '/intelligence-search': 'Intelligence Search',

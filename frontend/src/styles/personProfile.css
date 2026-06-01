@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  max-width: 960px;
+  max-width: 1100px;
 }
 
 .profile-breadcrumb a {
@@ -222,4 +222,83 @@
   .profile-header-text h1 {
     font-size: 1.35rem;
   }
+}
+
+.profile-breadcrumb-sep {
+  color: var(--gov-muted);
+  margin: 0 0.25rem;
+}
+
+.profile-360-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.profile-360-section {
+  padding: 0;
+  overflow: hidden;
+}
+
+.profile-360-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-360-section-toggle:hover {
+  background: rgba(11, 37, 69, 0.03);
+}
+
+.profile-360-section-heading h3 {
+  margin: 0 0 0.25rem;
+  color: var(--gov-navy);
+  font-size: 1.05rem;
+}
+
+.profile-360-section-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--gov-muted);
+}
+
+.profile-360-chevron {
+  color: var(--gov-blue);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.profile-360-fields {
+  padding: 0 1.25rem 1.25rem;
+}
+
+.profile-360-dept-tags {
+  margin-top: 0.75rem !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.profile-360-dept-tag {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 12px;
+  background: var(--gov-light);
+  border: 1px solid var(--gov-border);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gov-navy);
+}
+
+.profile-360-empty {
+  padding: 1.5rem;
+  color: var(--gov-muted);
 }

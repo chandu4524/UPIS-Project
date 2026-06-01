@@ -16,6 +16,8 @@ import OCRProcessing from './pages/OCRProcessing';
 import IntelligenceSearch from './pages/IntelligenceSearch';
 import AIAssistant from './pages/AIAssistant';
 import AdminUsers from './pages/AdminUsers';
+import DataSources from './pages/DataSources';
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import ToastProvider from './components/ToastProvider';
 import './styles/global.css';
 
@@ -134,6 +136,22 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Reports />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics-dashboard"
+          element={
+            <ProtectedRoute>
+              <AnalyticsDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/data-sources"
+          element={
+            <ProtectedRoute>
+              <DataSources />
             </ProtectedRoute>
           }
         />

@@ -102,15 +102,33 @@ def upload_files(
                 except OSError:
                     pass
 
-    succeeded = sum(1 for item in items if item.get("status") == "success")
+    succeeded = sum(1 for item in items if item.get("upload_success") or item.get("status") == "success")
     failed = len(items) - succeeded
+    analytics_warnings = [
+        item.get("analytics_warning")
+        for item in items
+        if item.get("analytics_warning") and (item.get("upload_success") or item.get("status") == "success")
+    ]
+
+    validation_warnings = [
+        item.get("validation_warning")
+        for item in items
+        if item.get("validation_warning") and (item.get("upload_success") or item.get("status") == "success")
+    ]
 
     return {
         "success": failed == 0,
+        "upload_success": succeeded > 0,
         "message": (
             f"Processed {len(items)} file(s): {succeeded} succeeded, {failed} failed"
             if failed
             else "Files uploaded"
+        ),
+        "analytics_warning": analytics_warnings[0] if len(analytics_warnings) == 1 else (
+            f"Analytics sync warnings on {len(analytics_warnings)} file(s)" if analytics_warnings else None
+        ),
+        "validation_warning": validation_warnings[0] if len(validation_warnings) == 1 else (
+            f"Duplicate records skipped in {len(validation_warnings)} file(s)" if validation_warnings else None
         ),
         "count": len(items),
         "items": items,

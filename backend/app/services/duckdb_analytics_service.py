@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from app.core.logging_config import get_logger
 from app.services.duckdb_service import (
     UPLOADED_DATA_TABLE,
-    _load_dataframe_relation,
+    append_dataframe_to_table,
+    column_exists,
     execute_query,
-    get_duckdb_connection,
     table_exists,
 )
 
@@ -28,10 +28,9 @@ def sync_upload_summary(
     uploaded_at: datetime,
     department_name: Optional[str],
     validation: Dict[str, Any],
-) -> None:
-    """Persist per-upload validation metrics into DuckDB (non-blocking for uploads)."""
+) -> Optional[str]:
+    """Persist per-upload validation metrics into DuckDB. Returns warning text on failure."""
     try:
-        conn = get_duckdb_connection()
         payload = pd.DataFrame(
             [
                 {
@@ -48,21 +47,16 @@ def sync_upload_summary(
                 }
             ]
         )
-        _load_dataframe_relation(conn, payload, relation="summary_payload")
-        if not table_exists(UPLOAD_SUMMARIES_TABLE):
-            conn.execute(
-                f"CREATE TABLE {UPLOAD_SUMMARIES_TABLE} AS SELECT * FROM summary_payload"
-            )
-        else:
-            conn.execute(
-                f"INSERT INTO {UPLOAD_SUMMARIES_TABLE} BY NAME SELECT * FROM summary_payload"
-            )
-        try:
-            conn.execute("DROP TABLE IF EXISTS summary_payload")
-        except Exception:
-            pass
+        append_dataframe_to_table(
+            UPLOAD_SUMMARIES_TABLE,
+            payload,
+            relation="summary_payload",
+        )
+        return None
     except Exception as exc:
+        warning = f"DuckDB summary sync failed: {exc}"
         logger.warning("DuckDB upload summary sync failed for upload %s: %s", upload_id, exc)
+        return warning
 
 
 def _empty_summary() -> Dict[str, Any]:
@@ -126,45 +120,56 @@ def get_dashboard_summary() -> Dict[str, Any]:
     return _empty_summary()
 
 
-def get_source_distribution() -> List[Dict[str, Any]]:
-    if table_exists(UPLOAD_SUMMARIES_TABLE):
-        df = execute_query(
-            f"""
-            SELECT
-                COALESCE(department_name, 'GENERAL') AS source,
-                COUNT(DISTINCT upload_id) AS files,
-                COALESCE(SUM(total_rows), 0) AS records,
-                COALESCE(SUM(invalid_rows + duplicate_rows + rejected_rows), 0) AS errors
-            FROM {UPLOAD_SUMMARIES_TABLE}
-            GROUP BY 1
-            ORDER BY records DESC, source ASC
-            """
-        )
-        if not df.empty:
-            return _records_from_df(df)
+def get_source_distribution() -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Source-wise upload metrics; failures return ([], warning) without affecting DuckDB globally."""
+    logger.info("source distribution query started")
+    try:
+        if table_exists(UPLOAD_SUMMARIES_TABLE):
+            df = execute_query(
+                f"""
+                SELECT
+                    COALESCE(department_name, 'GENERAL') AS source,
+                    COUNT(DISTINCT upload_id) AS files,
+                    COALESCE(SUM(total_rows), 0) AS records,
+                    COALESCE(SUM(invalid_rows + duplicate_rows + rejected_rows), 0) AS errors
+                FROM {UPLOAD_SUMMARIES_TABLE}
+                GROUP BY 1
+                ORDER BY records DESC, source ASC
+                """
+            )
+            if not df.empty:
+                items = _records_from_df(df)
+                logger.info("source distribution query completed (%s rows from summaries)", len(items))
+                return items, None
 
-    if table_exists(UPLOADED_DATA_TABLE):
-        dept_col = "department_name" if _column_exists(UPLOADED_DATA_TABLE, "department_name") else None
-        source_expr = (
-            "COALESCE(department_name, 'GENERAL')"
-            if dept_col
-            else "'GENERAL'"
-        )
-        df = execute_query(
-            f"""
-            SELECT
-                {source_expr} AS source,
-                COUNT(DISTINCT upload_id) AS files,
-                COUNT(*) AS records,
-                0 AS errors
-            FROM {UPLOADED_DATA_TABLE}
-            GROUP BY 1
-            ORDER BY records DESC, source ASC
-            """
-        )
-        return _records_from_df(df)
+        if table_exists(UPLOADED_DATA_TABLE):
+            has_dept = column_exists(UPLOADED_DATA_TABLE, "department_name")
+            source_expr = (
+                "COALESCE(department_name, 'GENERAL')"
+                if has_dept
+                else "'GENERAL'"
+            )
+            df = execute_query(
+                f"""
+                SELECT
+                    {source_expr} AS source,
+                    COUNT(DISTINCT upload_id) AS files,
+                    COUNT(*) AS records,
+                    0 AS errors
+                FROM {UPLOADED_DATA_TABLE}
+                GROUP BY 1
+                ORDER BY records DESC, source ASC
+                """
+            )
+            items = _records_from_df(df)
+            logger.info("source distribution query completed (%s rows from uploaded_data)", len(items))
+            return items, None
 
-    return []
+        logger.info("source distribution query completed (no analytics tables)")
+        return [], None
+    except Exception as exc:
+        logger.exception("source distribution query failed")
+        return [], f"Source distribution unavailable: {exc}"
 
 
 def get_validation_distribution() -> List[Dict[str, Any]]:
@@ -224,19 +229,6 @@ def get_upload_trends() -> List[Dict[str, Any]]:
         return _records_from_df(df, date_field="date")
 
     return []
-def _column_exists(table_name: str, column_name: str) -> bool:
-    df = execute_query(
-        """
-        SELECT COUNT(*) AS n
-        FROM information_schema.columns
-        WHERE table_schema = 'main'
-          AND table_name = ?
-          AND column_name = ?
-        """,
-        [table_name, column_name],
-    )
-    return bool(not df.empty and int(df.iloc[0]["n"] or 0) > 0)
-
 
 def _records_from_df(df: pd.DataFrame, date_field: Optional[str] = None) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []

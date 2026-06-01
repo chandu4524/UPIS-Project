@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.deps import CurrentUser, require_permission
-from app.auth.rbac import PERM_PERSON_READ
+from app.auth.rbac import PERM_CITIZENS_READ, PERM_PERSON_READ
 from app.services.person360_service import (
     get_person_profile,
     get_person_relationships,
@@ -28,7 +28,7 @@ def persons_search(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_permission(PERM_PERSON_READ)),
+    current_user: CurrentUser = Depends(require_permission(PERM_CITIZENS_READ, PERM_PERSON_READ)),
 ):
     result = search_persons(
         db,
@@ -52,7 +52,7 @@ def persons_search(
 @router.get("/persons/search-summary")
 def persons_search_summary(
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_permission(PERM_PERSON_READ)),
+    current_user: CurrentUser = Depends(require_permission(PERM_CITIZENS_READ, PERM_PERSON_READ)),
 ):
     summary = get_search_summary(db)
     return {
@@ -67,7 +67,7 @@ def persons_search_summary(
 def person_profile(
     citizen_id: int,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_permission(PERM_PERSON_READ)),
+    current_user: CurrentUser = Depends(require_permission(PERM_CITIZENS_READ, PERM_PERSON_READ)),
 ):
     profile = get_person_profile(db, citizen_id)
     return {
@@ -84,7 +84,7 @@ def person_sources(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_permission(PERM_PERSON_READ)),
+    current_user: CurrentUser = Depends(require_permission(PERM_CITIZENS_READ, PERM_PERSON_READ)),
 ):
     result = get_person_sources(db, citizen_id, page=page, page_size=page_size)
     return {
@@ -101,7 +101,7 @@ def person_relationships(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_permission(PERM_PERSON_READ)),
+    current_user: CurrentUser = Depends(require_permission(PERM_CITIZENS_READ, PERM_PERSON_READ)),
 ):
     result = get_person_relationships(db, citizen_id, page=page, page_size=page_size)
     return {
