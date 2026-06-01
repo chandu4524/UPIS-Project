@@ -111,16 +111,22 @@ def execute_query(
     return conn.execute(sql, params).fetchdf()
 
 
-def _uploaded_data_table_exists(conn: Any) -> bool:
+def table_exists(table_name: str) -> bool:
+    """Return True if a table exists in the main DuckDB schema."""
+    conn = get_duckdb_connection()
     row = conn.execute(
         """
         SELECT COUNT(*)
         FROM information_schema.tables
         WHERE table_schema = 'main' AND table_name = ?
         """,
-        [UPLOADED_DATA_TABLE],
+        [table_name],
     ).fetchone()
     return bool(row and row[0] > 0)
+
+
+def _uploaded_data_table_exists(conn: Any) -> bool:
+    return table_exists(UPLOADED_DATA_TABLE)
 
 
 def append_uploaded_data(

@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.data_source_api import router as data_source_router
+from app.api.analytics_api import router as analytics_router
 from app.api.analytics_duckdb_api import router as analytics_duckdb_router
 from app.api.assistant_api import router as assistant_router
 from app.api.audit_api import router as audit_router
@@ -120,9 +122,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(user_router)
 app.include_router(users_admin_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
+app.include_router(data_source_router, prefix="/api")
 app.include_router(bulk_upload_router, prefix="/api")
 app.include_router(staging_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
 app.include_router(analytics_duckdb_router, prefix="/api")
 app.include_router(citizen_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")

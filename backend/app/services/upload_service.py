@@ -161,12 +161,14 @@ def process_upload_file_item(
     db: Session,
     file: UploadFile,
     file_path: str,
+    *,
+    department_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Process one upload file; failures are returned as a failed item, not raised."""
     filename = file.filename or os.path.basename(file_path)
     try:
         validate_upload_file(file)
-        result = process_file_upload(db, file, file_path)
+        result = process_file_upload(db, file, file_path, department_name=department_name)
         return file_upload_item_from_result(filename, result)
     except Exception as exc:
         return file_upload_item_from_error(filename, exc)
@@ -462,6 +464,7 @@ def process_dataframe_upload(
                 upload_id=upload_record.id,
                 source_file=filename,
                 uploaded_at=upload_record.uploaded_at,
+                department_name=department_name,
             )
             if preview_rows is None and not chunk.empty:
                 preview_rows = chunk.head(5).to_dict(orient="records")
@@ -480,6 +483,19 @@ def process_dataframe_upload(
     rows_imported = validation["rows_imported"]
     upload_record.uploaded_rows = rows_imported
     db.commit()
+
+    try:
+        from app.services.duckdb_analytics_service import sync_upload_summary
+
+        sync_upload_summary(
+            upload_id=upload_record.id,
+            source_file=filename,
+            uploaded_at=upload_record.uploaded_at,
+            department_name=department_name,
+            validation=validation,
+        )
+    except Exception:
+        pass
 
     try:
         candidate_stats = generate_candidates_for_upload(db, upload_record.id)
@@ -541,6 +557,8 @@ def process_file_upload(
     db: Session,
     file: UploadFile,
     file_path: str,
+    *,
+    department_name: Optional[str] = None,
 ) -> dict:
     """
     Parse an uploaded file by extension, then run the standard ingestion pipeline.
@@ -559,7 +577,7 @@ def process_file_upload(
             found_columns=found_columns,
             missing_columns=missing_columns,
             column_mapping=column_mapping,
-            department_name=None,
+            department_name=department_name,
         )
 
     try:
@@ -581,7 +599,7 @@ def process_file_upload(
         found_columns=found_columns,
         missing_columns=missing_columns,
         column_mapping=column_mapping,
-        department_name=source_type,
+        department_name=department_name or source_type,
     )
 
 

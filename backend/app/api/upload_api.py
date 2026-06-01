@@ -1,12 +1,13 @@
-from typing import List
+from typing import List, Optional
 import os
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.deps import CurrentUser, require_permission
 from app.auth.rbac import PERM_UPLOAD_READ, PERM_UPLOAD_WRITE
 from app.services.audit_service import ACTION_UPLOAD_FILE, log_action
+from app.services.data_source_service import resolve_department_name
 from app.services.upload_service import (
     list_uploads_paginated,
     process_file_upload,
@@ -58,6 +59,7 @@ def upload_file(
 @router.post("/upload-files")
 def upload_files(
     files: List[UploadFile] = File(...),
+    data_source_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_permission(PERM_UPLOAD_WRITE)),
 ):
@@ -71,12 +73,19 @@ def upload_files(
             "items": [],
         }
 
+    department_name = resolve_department_name(db, data_source_id)
+
     items = []
     for file in files:
         file_path = None
         try:
             file_path = save_upload_file(file)
-            item = process_upload_file_item(db, file, file_path)
+            item = process_upload_file_item(
+                db,
+                file,
+                file_path,
+                department_name=department_name,
+            )
             if item.get("status") == "success" and item.get("file_id"):
                 log_action(
                     db,

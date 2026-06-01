@@ -216,6 +216,7 @@ def register_ingested_dataframe(
     upload_id: int,
     source_file: str,
     uploaded_at: Optional[datetime] = None,
+    department_name: Optional[str] = None,
 ) -> int:
     """
     Push a parsed upload dataframe into DuckDB analytics storage.
@@ -224,10 +225,13 @@ def register_ingested_dataframe(
     try:
         from app.services.duckdb_service import append_uploaded_data
 
+        payload = df.copy()
+        payload["department_name"] = (department_name or "GENERAL").strip() or "GENERAL"
+
         return append_uploaded_data(
             upload_id=int(upload_id),
             source_file=source_file,
-            df=df,
+            df=payload,
             uploaded_at=uploaded_at,
         )
     except Exception as exc:

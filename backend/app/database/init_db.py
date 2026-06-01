@@ -22,6 +22,7 @@ from app.models.person_source import PersonSource  # noqa: F401
 from app.models.person_relationship import PersonRelationship  # noqa: F401
 from app.models.upload_batch import UploadBatch, UploadBatchFile  # noqa: F401
 from app.models.upload import Upload  # noqa: F401
+from app.models.data_source import DataSource  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 
