@@ -18,7 +18,8 @@ const FIELD_LABELS = {
   aadhaar: 'Aadhaar ref',
   customer_id: 'Customer ID',
   exact_match: 'Exact match',
-  source_record: 'Source record',
+  bank_ref: 'Bank ref',
+  lpg_consumer_no: 'LPG consumer no',
 };
 
 const SUGGEST_DEBOUNCE_MS = 280;
@@ -34,6 +35,34 @@ function formatRelevance(score) {
   const value = Number(score);
   if (Number.isNaN(value)) return '—';
   return `${value.toFixed(0)}%`;
+}
+
+function formatMatchFieldLabel(field) {
+  if (!field) return 'Field';
+  return FIELD_LABELS[field] || field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function matchBadgeClass(badge) {
+  return badge === 'EXACT MATCH'
+    ? 'intel-match-badge intel-match-exact'
+    : 'intel-match-badge intel-match-fuzzy';
+}
+
+function openProfile(navigate, row) {
+  const citizenId = row.citizen_id || (row.match_type === 'citizen' ? row.id : null);
+  const stagingId = row.staging_id;
+  if (citizenId) {
+    const qs = stagingId ? `?staging_id=${stagingId}` : '';
+    navigate(`/person-profile/${citizenId}${qs}`, {
+      state: stagingId ? { focusStagingId: String(stagingId) } : undefined,
+    });
+    return;
+  }
+  if (stagingId) {
+    navigate(`/intelligence-search`, {
+      state: { message: 'This upload record is not linked to a citizen profile yet.' },
+    });
+  }
 }
 
 function HighlightedValue({ text, spans = [] }) {
@@ -119,7 +148,7 @@ export default function IntelligenceSearch() {
         setSuggestions(data.suggestions || []);
       } else {
         setResults(data.results || []);
-        setStagingResults(data.staging_results || []);
+        setStagingResults([]);
         setAmbiguousGroups(data.ambiguous_groups || []);
         setSuggestions(data.suggestions || []);
         setTotal(data.total ?? (data.results || []).length);
@@ -186,18 +215,30 @@ export default function IntelligenceSearch() {
     !error;
 
   const renderResultCard = (row, keyPrefix = 'r') => (
-    <article key={`${keyPrefix}-${row.id || row.staging_id}`} className="intel-result-card">
+    <article key={`${keyPrefix}-${row.staging_id || row.id || row.citizen_id}`} className="intel-result-card">
       <header className="intel-result-header">
         <h4 className="intel-result-name">{renderFieldValue(row, 'full_name')}</h4>
-        <span className={relevanceBadgeClass(row.relevance_score)}>
-          {formatRelevance(row.relevance_score)} match
-        </span>
+        <div className="intel-result-badges">
+          <span className={matchBadgeClass(row.match_badge)}>
+            {row.match_badge || (row.match_priority <= 2 ? 'EXACT MATCH' : 'FUZZY MATCH')}
+          </span>
+          <span className={relevanceBadgeClass(row.relevance_score)}>
+            {formatRelevance(row.relevance_score)}
+          </span>
+        </div>
       </header>
 
-      {row.match_type === 'staging' && (
+      {row.match_field && row.match_value && (
+        <p className="intel-exact-hit">
+          Matched on <strong>{row.match_field_label || formatMatchFieldLabel(row.match_field)}</strong>
+          : {row.match_value}
+        </p>
+      )}
+
+      {(row.source_label || row.match_type === 'staging' || row.match_type === 'duckdb') && (
         <p className="intel-staging-note">
-          Staging record · {row.department_name || row.source_name || 'Upload'}
-          {row.source_id ? ` · ID ${row.source_id}` : ''}
+          Source: {row.source_label || `${row.department_name || 'Upload'} · ${row.source_name || 'Record'}`}
+          {row.upload_batch_id ? ` · Batch #${row.upload_batch_id}` : ''}
         </p>
       )}
 
@@ -222,20 +263,20 @@ export default function IntelligenceSearch() {
             </div>
           );
         })}
-        {row.source_id && (
+        {row.source_id && row.match_field !== 'consumer_id' && (
           <div className="intel-field-row">
-            <span className="intel-field-label">Source ID:</span>
+            <span className="intel-field-label">Identifier:</span>
             <span className="intel-field-value">{row.source_id}</span>
           </div>
         )}
       </div>
 
       <div className="intel-result-actions">
-        {row.id || row.citizen_id ? (
+        {row.citizen_id || row.staging_id ? (
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={() => navigate(`/person-profile/${row.id || row.citizen_id}`)}
+            onClick={() => openProfile(navigate, row)}
           >
             View 360 profile
           </button>
@@ -358,8 +399,9 @@ export default function IntelligenceSearch() {
               <SensitiveAccessBadge {...accessFlags} />
             </div>
             <p className="intel-results-meta">
-              Showing {results.length + stagingResults.length} of {total} match
+              Showing {(results.length || 0) + (stagingResults.length || 0)} of {total} match
               {total === 1 ? '' : 'es'} for &ldquo;{searchedQuery}&rdquo;
+              {searchedQuery && /^[a-zA-Z]*\d/i.test(searchedQuery) ? ' · exact identifiers ranked first' : ''}
             </p>
             <div className="intel-results-grid">
               {results.map((row) => renderResultCard(row))}

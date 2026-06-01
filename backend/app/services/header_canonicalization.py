@@ -78,6 +78,7 @@ UNIVERSAL_HEADER_ALIASES: Dict[str, List[str]] = {
   "employer": ["employer", "employer_name", "company", "company_name", "organization"],
   "department": ["department", "dept", "department_name", "office", "wing"],
   "bank_name": ["bank_name", "bank name", "bank", "bank_branch"],
+  "bank_ref": ["bank_ref", "bank ref", "bank_reference", "bank_reference_no"],
   "scheme_name": ["scheme_name", "scheme name", "scheme", "programme", "program", "welfare_scheme"],
   "utility_type": ["utility_type", "utility type", "service_type", "connection_type"],
   "connection_no": [

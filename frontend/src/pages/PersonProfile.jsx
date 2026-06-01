@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Loader from '../components/Loader';
 import SensitiveAccessBadge from '../components/SensitiveAccessBadge';
@@ -13,8 +13,12 @@ function displayValue(value) {
   return value;
 }
 
-function ProfileSection({ section, defaultOpen = false, masked }) {
-  const [open, setOpen] = useState(defaultOpen);
+function ProfileSection({ section, defaultOpen = false, masked, forceOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen || forceOpen);
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
   const fields = Array.isArray(section?.fields) ? section.fields : [];
 
   if (!fields.length) {
@@ -72,7 +76,10 @@ function ProfileSection({ section, defaultOpen = false, masked }) {
 
 export default function PersonProfile() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const focusStagingId = searchParams.get('staging_id') || location.state?.focusStagingId;
   const [citizen, setCitizen] = useState(null);
   const [profile360, setProfile360] = useState(null);
   const [meta, setMeta] = useState({});
@@ -124,6 +131,14 @@ export default function PersonProfile() {
 
   const sections = Array.isArray(profile360?.sections) ? profile360.sections : [];
   const district = citizen?.district || 'Not specified';
+
+  const orderedSections = useMemo(() => {
+    if (!focusStagingId) return sections;
+    const focusKey = `staging_${focusStagingId}`;
+    const match = sections.find((s) => String(s.section_id) === focusKey);
+    const rest = sections.filter((s) => String(s.section_id) !== focusKey);
+    return match ? [match, ...rest] : sections;
+  }, [sections, focusStagingId]);
 
   return (
     <Layout>
@@ -215,11 +230,12 @@ export default function PersonProfile() {
               </div>
             ) : (
               <div className="profile-360-sections">
-                {sections.map((section, idx) => (
+                {orderedSections.map((section, idx) => (
                   <ProfileSection
                     key={section.section_id || idx}
                     section={section}
                     defaultOpen={idx === 0}
+                    forceOpen={focusStagingId && String(section.section_id) === `staging_${focusStagingId}`}
                     masked={accessFlags.sensitive_fields_masked}
                   />
                 ))}

@@ -36,7 +36,7 @@ def search_intelligence(
             entity_id=result["query"][:120],
         )
 
-    combined = list(result.get("results", [])) + list(result.get("staging_results", []))
+    combined = list(result.get("results", []))
     items, access_meta = prepare_citizen_list_response(
         db,
         combined,
@@ -45,14 +45,10 @@ def search_intelligence(
         list_context=f"search:{result.get('query', '')[:80]}",
     )
 
-    masked_results = items[: len(result.get("results", []))]
-    staging_count = len(result.get("staging_results", []))
-    masked_staging = items[len(result.get("results", [])) : len(result.get("results", [])) + staging_count]
-
     return {
         "success": True,
         "message": "Intelligence search completed",
         "logged_in_user": current_user.username,
         **access_meta,
-        **{**result, "results": masked_results, "staging_results": masked_staging},
+        **{**result, "results": items, "staging_results": []},
     }
