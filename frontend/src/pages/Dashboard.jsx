@@ -123,26 +123,40 @@ export default function Dashboard() {
 
             <section className="stats-grid" aria-label="Dashboard statistics">
               <StatCard
-                label="Total Citizens"
-                value={stats.total_citizens ?? 0}
-                icon="👥"
+                label="Intelligence records"
+                value={stats.intelligence_records ?? stats.total_staging_rows ?? 0}
+                icon="📊"
                 accent="accent-blue"
+                linkTo="/intelligence-search"
               />
               <StatCard
-                label="Uploaded Files"
+                label="Staging rows"
+                value={stats.total_staging_rows ?? 0}
+                icon="📋"
+                accent="accent-navy"
+              />
+              <StatCard
+                label="Analytics rows"
+                value={stats.total_uploaded_data_rows ?? 0}
+                icon="🗄"
+                accent="accent-green"
+              />
+              <StatCard
+                label="Citizen registry"
+                value={stats.total_citizens ?? 0}
+                icon="👥"
+                accent="accent-gold"
+                linkTo="/citizens"
+              />
+              <StatCard
+                label="Uploaded files"
                 value={totalUploads}
                 icon="📁"
                 accent="accent-gold"
                 linkTo="/upload-history"
               />
               <StatCard
-                label="District Count"
-                value={stats.district_count ?? 0}
-                icon="🗺"
-                accent="accent-navy"
-              />
-              <StatCard
-                label="Imported Rows"
+                label="Imported rows"
                 value={stats.total_imported_rows ?? 0}
                 icon="⬆"
                 accent="accent-green"

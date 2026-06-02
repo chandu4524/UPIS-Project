@@ -5,11 +5,15 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import CurrentUser, require_permission
 from app.auth.rbac import PERM_SEARCH_READ
+from app.core.logging_config import get_logger
 from app.services.audit_service import ACTION_INTELLIGENCE_SEARCH, log_action
+from app.services.data_scope_service import get_dataset_scope
 from app.services.intelligence_search_service import intelligence_search
 from app.services.person360_search import intelligence_search_360
 from app.services.sensitive_access_service import prepare_citizen_list_response
 from app.utils.dependencies import get_db
+
+logger = get_logger("gpip.intelligence_search")
 
 router = APIRouter(tags=["Intelligence Search"])
 
@@ -45,10 +49,22 @@ def search_intelligence(
         list_context=f"search:{result.get('query', '')[:80]}",
     )
 
+    diagnostics = result.get("diagnostics")
+    if not diagnostics:
+        scope = get_dataset_scope(db)
+        diagnostics = {
+            "search_scope": {
+                "citizens": scope["citizens"],
+                "staging": scope["person_staging"],
+                "duckdb": scope["uploaded_data"],
+            },
+            "result_sources": {},
+        }
+
     return {
         "success": True,
         "message": "Intelligence search completed",
         "logged_in_user": current_user.username,
         **access_meta,
-        **{**result, "results": items, "staging_results": []},
+        **{**result, "results": items, "staging_results": [], "diagnostics": diagnostics},
     }

@@ -3,6 +3,7 @@ from sqlalchemy import func
 
 from app.models.citizen import Citizen
 from app.models.upload import Upload
+from app.services.data_scope_service import count_duckdb_uploaded_rows, count_person_staging
 
 
 def get_dashboard_stats(db: Session):
@@ -10,6 +11,9 @@ def get_dashboard_stats(db: Session):
     total_citizens = db.query(
         func.count(Citizen.id)
     ).scalar()
+
+    total_staging_rows = count_person_staging(db)
+    total_uploaded_data_rows = count_duckdb_uploaded_rows()
 
     district_count = db.query(
         func.count(
@@ -45,8 +49,16 @@ def get_dashboard_stats(db: Session):
             "uploaded_at": upload.uploaded_at.isoformat() if upload.uploaded_at else None,
         })
 
+    intelligence_records = max(
+        int(total_staging_rows or 0),
+        int(total_uploaded_data_rows or 0),
+    )
+
     return {
         "total_citizens": total_citizens,
+        "total_staging_rows": total_staging_rows,
+        "total_uploaded_data_rows": total_uploaded_data_rows,
+        "intelligence_records": intelligence_records,
         "district_count": district_count,
         "uploaded_files": uploaded_files,
         "total_imported_rows": int(total_imported_rows or 0),

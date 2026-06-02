@@ -28,6 +28,8 @@ export default function Navbar({ onMenuToggle, sidebarOpen = false }) {
     : location.pathname.startsWith('/relationships')
       ? 'Relationship Graph'
       : location.pathname.startsWith('/person-profile')
+        || location.pathname.startsWith('/staging-profile')
+        || location.pathname.startsWith('/uploaded-profile')
         ? 'Person 360 Profile'
         : PAGE_TITLES[location.pathname] || 'GPIP Portal';
 

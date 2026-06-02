@@ -13,7 +13,6 @@ from app.models.citizen import Citizen
 from app.models.person_source import PersonSource
 from app.models.person_staging import PersonStaging
 from app.services.citizen_service import mobile_lookup_key
-from app.services.header_canonicalization import UNIVERSAL_HEADER_ALIASES, normalize_header
 
 SKIP_FIELD_KEYS = frozenset(
     {
@@ -216,7 +215,6 @@ def _fetch_linked_staging_rows(db: Session, citizen_id: int, citizen: Citizen) -
         db.query(PersonStaging)
         .filter(or_(*filters))
         .order_by(PersonStaging.created_at.desc(), PersonStaging.id.desc())
-        .limit(200)
         .all()
     )
 
@@ -252,15 +250,193 @@ def _fetch_duckdb_rows(citizen: Citizen, upload_ids: List[int]) -> List[Dict[str
         clauses.append("CAST(mobile AS VARCHAR) = ?")
         params.append(mobile_key)
 
+    if citizen.full_name and column_exists(UPLOADED_DATA_TABLE, "full_name"):
+        clauses.append("LOWER(CAST(full_name AS VARCHAR)) = LOWER(?)")
+        params.append(str(citizen.full_name).strip())
+
     if not clauses:
         return []
 
     where_sql = " OR ".join(f"({c})" for c in clauses)
-    sql = f"SELECT * FROM {UPLOADED_DATA_TABLE} WHERE {where_sql} LIMIT 100"
+    sql = f"SELECT * FROM {UPLOADED_DATA_TABLE} WHERE {where_sql}"
     df = execute_query(sql, params)
     if df is None or df.empty:
         return []
     return df.to_dict(orient="records")
+
+
+def _fetch_duckdb_rows_for_staging(row: PersonStaging) -> List[Dict[str, Any]]:
+    """All DuckDB upload rows for this staging batch and matching identity (full history)."""
+    try:
+        from app.services.duckdb_service import UPLOADED_DATA_TABLE, column_exists, execute_query, table_exists
+    except Exception:
+        return []
+
+    if not table_exists(UPLOADED_DATA_TABLE):
+        return []
+
+    clauses: List[str] = []
+    params: List[Any] = []
+
+    if row.upload_batch_id:
+        clauses.append("upload_id = ?")
+        params.append(int(row.upload_batch_id))
+
+    mobile_key = mobile_lookup_key(row.mobile)
+    if mobile_key and column_exists(UPLOADED_DATA_TABLE, "mobile"):
+        clauses.append("CAST(mobile AS VARCHAR) = ?")
+        params.append(mobile_key)
+
+    if row.full_name and column_exists(UPLOADED_DATA_TABLE, "full_name"):
+        clauses.append("LOWER(CAST(full_name AS VARCHAR)) = LOWER(?)")
+        params.append(str(row.full_name).strip())
+
+    if not clauses:
+        return []
+
+    where_sql = " OR ".join(f"({c})" for c in clauses)
+    sql = f"SELECT * FROM {UPLOADED_DATA_TABLE} WHERE {where_sql}"
+    df = execute_query(sql, params)
+    if df is None or df.empty:
+        return []
+    return df.to_dict(orient="records")
+
+
+def _fetch_duckdb_row_by_index(upload_id: int, row_index: int) -> Optional[Dict[str, Any]]:
+    try:
+        from app.services.duckdb_service import UPLOADED_DATA_TABLE, execute_query, table_exists
+    except Exception:
+        return None
+
+    if not table_exists(UPLOADED_DATA_TABLE):
+        return None
+
+    df = execute_query(
+        f"SELECT * FROM {UPLOADED_DATA_TABLE} WHERE upload_id = ?",
+        [int(upload_id)],
+    )
+    if df is None or df.empty:
+        return None
+    records = df.to_dict(orient="records")
+    idx = int(row_index)
+    if idx < 0 or idx >= len(records):
+        return None
+    return records[idx]
+
+
+def _citizen_id_for_staging(db: Session, staging_id: int) -> Optional[int]:
+    link = (
+        db.query(PersonSource)
+        .filter(PersonSource.staging_id == int(staging_id))
+        .order_by(PersonSource.id.desc())
+        .first()
+    )
+    return int(link.citizen_id) if link and link.citizen_id else None
+
+
+def build_staging_360_profile(db: Session, staging_id: int) -> Dict[str, Any]:
+    """360 profile for an upload staging row (with or without citizen link)."""
+    row = db.query(PersonStaging).filter(PersonStaging.id == int(staging_id)).first()
+    if not row:
+        return {}
+
+    sections: List[Dict[str, Any]] = []
+    citizen_id = _citizen_id_for_staging(db, staging_id)
+
+    if citizen_id:
+        citizen = db.query(Citizen).filter(Citizen.id == int(citizen_id)).first()
+        if citizen:
+            sections.append(_citizen_registry_section(citizen))
+            sections.extend(
+                s
+                for s in (
+                    _staging_to_section(r)
+                    for r in _fetch_linked_staging_rows(db, citizen_id, citizen)
+                )
+                if s.get("staging_id") != row.id
+            )
+
+    sections.append(_staging_to_section(row))
+
+    duckdb_records = _fetch_duckdb_rows_for_staging(row)
+    for idx, record in enumerate(duckdb_records):
+        sections.append(_duckdb_row_to_section(record, index=idx))
+
+    all_field_keys: Set[str] = set()
+    total_fields = 0
+    for section in sections:
+        total_fields += section.get("field_count", 0)
+        for field in section.get("fields", []):
+            all_field_keys.add(field.get("key", ""))
+
+    return {
+        "profile_type": "staging",
+        "staging_id": row.id,
+        "citizen_id": citizen_id,
+        "sections": sections,
+        "source_links": [],
+        "linked_departments": [row.department_name] if row.department_name else [],
+        "source_count": 1,
+        "staging_row_count": 1,
+        "duckdb_row_count": len(duckdb_records),
+        "total_field_count": total_fields,
+        "all_field_keys": sorted(k for k in all_field_keys if k),
+    }
+
+
+def build_duckdb_360_profile(db: Session, upload_id: int, row_index: int) -> Dict[str, Any]:
+    """360 profile built from a single DuckDB uploaded_data row."""
+    record = _fetch_duckdb_row_by_index(upload_id, row_index)
+    if not record:
+        return {}
+
+    sections: List[Dict[str, Any]] = []
+    staging_id = None
+    citizen_id = None
+    full_name = record.get("full_name")
+    if full_name:
+        match = (
+            db.query(PersonStaging)
+            .filter(
+                PersonStaging.upload_batch_id == int(upload_id),
+                PersonStaging.full_name.ilike(str(full_name).strip()),
+            )
+            .order_by(PersonStaging.id.desc())
+            .first()
+        )
+        if match:
+            staging_id = match.id
+            citizen_id = _citizen_id_for_staging(db, staging_id)
+            if citizen_id:
+                citizen = db.query(Citizen).filter(Citizen.id == int(citizen_id)).first()
+                if citizen:
+                    sections.append(_citizen_registry_section(citizen))
+            sections.append(_staging_to_section(match))
+
+    sections.append(_duckdb_row_to_section(record, index=row_index))
+
+    all_field_keys: Set[str] = set()
+    total_fields = 0
+    for section in sections:
+        total_fields += section.get("field_count", 0)
+        for field in section.get("fields", []):
+            all_field_keys.add(field.get("key", ""))
+
+    return {
+        "profile_type": "duckdb",
+        "upload_id": int(upload_id),
+        "duckdb_row_index": int(row_index),
+        "staging_id": staging_id,
+        "citizen_id": citizen_id,
+        "sections": sections,
+        "source_links": [],
+        "linked_departments": [record.get("department_name")] if record.get("department_name") else [],
+        "source_count": 1,
+        "staging_row_count": 1 if staging_id else 0,
+        "duckdb_row_count": 1,
+        "total_field_count": total_fields,
+        "all_field_keys": sorted(k for k in all_field_keys if k),
+    }
 
 
 def build_person_360_profile(db: Session, citizen: Citizen) -> Dict[str, Any]:

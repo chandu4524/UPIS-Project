@@ -108,6 +108,22 @@ export default function App() {
           }
         />
         <Route
+          path="/staging-profile/:stagingId"
+          element={
+            <ProtectedRoute>
+              <PersonProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/uploaded-profile/:uploadId/:rowIndex"
+          element={
+            <ProtectedRoute>
+              <PersonProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/relationships/:id"
           element={
             <ProtectedRoute>

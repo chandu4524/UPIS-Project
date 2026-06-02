@@ -59,9 +59,12 @@ function openProfile(navigate, row) {
     return;
   }
   if (stagingId) {
-    navigate(`/intelligence-search`, {
-      state: { message: 'This upload record is not linked to a citizen profile yet.' },
-    });
+    navigate(`/staging-profile/${stagingId}`);
+    return;
+  }
+  const uploadId = row.upload_batch_id ?? row.upload_id;
+  if (row.match_type === 'duckdb' && uploadId != null && row.duckdb_row_index != null) {
+    navigate(`/uploaded-profile/${uploadId}/${row.duckdb_row_index}`);
   }
 }
 
@@ -118,6 +121,7 @@ export default function IntelligenceSearch() {
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [error, setError] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(null);
   const debounceRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -157,6 +161,7 @@ export default function IntelligenceSearch() {
           can_view_sensitive_fields: data.can_view_sensitive_fields,
           sensitive_fields_masked: data.sensitive_fields_masked,
         });
+        setDiagnostics(data.diagnostics || null);
         setShowSuggestions(false);
       }
     } catch (err) {
@@ -272,7 +277,7 @@ export default function IntelligenceSearch() {
       </div>
 
       <div className="intel-result-actions">
-        {row.citizen_id || row.staging_id ? (
+        {(row.citizen_id || row.staging_id || row.match_type === 'duckdb') ? (
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -281,7 +286,10 @@ export default function IntelligenceSearch() {
             View 360 profile
           </button>
         ) : (
-          <span className="intel-unlinked-label">Upload record — link via manual review</span>
+          <span className="intel-unlinked-label">No profile link available</span>
+        )}
+        {row.result_source && (
+          <span className="intel-source-tag">Source: {row.result_source}</span>
         )}
       </div>
     </article>
@@ -293,9 +301,8 @@ export default function IntelligenceSearch() {
         <section className="intel-search-intro card">
           <h2>Advanced intelligence search</h2>
           <p>
-            Search across citizen registry, upload staging, and source identifiers (LPG consumer
-            no, Aadhaar ref, mobile, and all uploaded fields). Fuzzy name matching with duplicate-name
-            disambiguation.
+            Search the full upload history — all staging rows, analytics data, and citizen registry
+            records. No re-upload required. Matches show citizen, staging, or DuckDB source.
           </p>
         </section>
 
@@ -403,6 +410,20 @@ export default function IntelligenceSearch() {
               {total === 1 ? '' : 'es'} for &ldquo;{searchedQuery}&rdquo;
               {searchedQuery && /^[a-zA-Z]*\d/i.test(searchedQuery) ? ' · exact identifiers ranked first' : ''}
             </p>
+            {diagnostics?.search_scope && (
+              <p className="intel-diagnostics" role="status">
+                Search scope: citizens={diagnostics.search_scope.citizens} · staging=
+                {diagnostics.search_scope.staging} · duckdb={diagnostics.search_scope.duckdb}
+                {diagnostics.result_sources && (
+                  <>
+                    {' '}
+                    · Result sources: citizen={diagnostics.result_sources.citizen ?? 0} · staging=
+                    {diagnostics.result_sources.staging ?? 0} · duckdb=
+                    {diagnostics.result_sources.duckdb ?? 0}
+                  </>
+                )}
+              </p>
+            )}
             <div className="intel-results-grid">
               {results.map((row) => renderResultCard(row))}
               {stagingResults.map((row) => renderResultCard(row, 's'))}

@@ -151,6 +151,8 @@ const ROUTE_PERMISSIONS = [
   { pattern: /^\/reports/, permission: PERM.REPORTS },
   { pattern: /^\/admin-users$/, permission: PERM.USERS_ADMIN },
   { pattern: /^\/person-profile\//, permission: PERM.CITIZENS },
+  { pattern: /^\/staging-profile\//, permission: PERM.CITIZENS },
+  { pattern: /^\/uploaded-profile\//, permission: PERM.CITIZENS },
   { pattern: /^\/relationships\//, permission: PERM.CITIZENS },
 ];
 

@@ -3,7 +3,11 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import Layout from '../components/Layout';
 import Loader from '../components/Loader';
 import SensitiveAccessBadge from '../components/SensitiveAccessBadge';
-import { fetchPerson360Profile } from '../services/person360Service';
+import {
+  fetchPerson360Profile,
+  fetchStaging360Profile,
+  fetchUploadedData360Profile,
+} from '../services/person360Service';
 import { formatError } from '../utils/formatError';
 import { formatUploadedDate } from '../utils/formatDate';
 import '../styles/personProfile.css';
@@ -38,7 +42,7 @@ function ProfileSection({ section, defaultOpen = false, masked, forceOpen = fals
           <p className="profile-360-section-meta">
             {section.source_type === 'registry' && 'Master registry'}
             {section.source_type === 'staging' &&
-              `Staging row ${section.row_number ?? '—'} · ${section.confidence_level || '—'}`}
+              `Staging row ${section.row_number ?? section.staging_id ?? '—'} · ${section.confidence_level || '—'}`}
             {section.source_type === 'duckdb' &&
               `Upload ${section.upload_id ?? '—'} · ${section.source_file || 'file'}`}
             {section.field_count != null && ` · ${section.field_count} fields`}
@@ -75,11 +79,14 @@ function ProfileSection({ section, defaultOpen = false, masked, forceOpen = fals
 }
 
 export default function PersonProfile() {
-  const { id } = useParams();
+  const { id, stagingId, uploadId, rowIndex } = useParams();
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const focusStagingId = searchParams.get('staging_id') || location.state?.focusStagingId;
+
+  const profileMode = stagingId ? 'staging' : uploadId ? 'duckdb' : 'citizen';
+
   const [citizen, setCitizen] = useState(null);
   const [profile360, setProfile360] = useState(null);
   const [meta, setMeta] = useState({});
@@ -88,19 +95,37 @@ export default function PersonProfile() {
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
-    if (!id) {
-      setError('Invalid citizen ID');
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError('');
+
     try {
-      const data = await fetchPerson360Profile(id);
+      let data;
+      if (profileMode === 'staging') {
+        if (!stagingId) {
+          setError('Invalid staging record ID');
+          return;
+        }
+        data = await fetchStaging360Profile(stagingId);
+      } else if (profileMode === 'duckdb') {
+        if (!uploadId || rowIndex === undefined) {
+          setError('Invalid uploaded data reference');
+          return;
+        }
+        data = await fetchUploadedData360Profile(uploadId, rowIndex);
+      } else {
+        if (!id) {
+          setError('Invalid citizen ID');
+          return;
+        }
+        data = await fetchPerson360Profile(id);
+      }
+
       setCitizen(data.citizen || null);
       setProfile360(data.profile_360 || null);
       setMeta({
+        profile_type: data.profile_type || profileMode,
+        staging_id: data.staging_id,
+        upload_id: data.upload_id,
         profile_confidence: data.profile_confidence,
         source_count: data.source_count,
         linked_departments: data.linked_departments || [],
@@ -113,7 +138,7 @@ export default function PersonProfile() {
         can_view_sensitive_fields: data.can_view_sensitive_fields,
         sensitive_fields_masked: data.sensitive_fields_masked,
       });
-      if (!data.citizen) {
+      if (!data.citizen && profileMode === 'citizen') {
         setError('Citizen profile not found');
       }
     } catch (err) {
@@ -123,7 +148,7 @@ export default function PersonProfile() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [profileMode, id, stagingId, uploadId, rowIndex]);
 
   useEffect(() => {
     loadProfile();
@@ -131,6 +156,13 @@ export default function PersonProfile() {
 
   const sections = Array.isArray(profile360?.sections) ? profile360.sections : [];
   const district = citizen?.district || 'Not specified';
+  const displayName = citizen?.full_name || 'Upload record';
+  const profileIdLabel =
+    profileMode === 'staging'
+      ? `Staging #${stagingId}`
+      : profileMode === 'duckdb'
+        ? `Upload #${uploadId} · row ${rowIndex}`
+        : `ID #${citizen?.id ?? id}`;
 
   const orderedSections = useMemo(() => {
     if (!focusStagingId) return sections;
@@ -139,6 +171,8 @@ export default function PersonProfile() {
     const rest = sections.filter((s) => String(s.section_id) !== focusKey);
     return match ? [match, ...rest] : sections;
   }, [sections, focusStagingId]);
+
+  const showRelationships = profileMode === 'citizen' && citizen?.id;
 
   return (
     <Layout>
@@ -157,9 +191,9 @@ export default function PersonProfile() {
             <button
               type="button"
               className="btn btn-secondary profile-retry-btn"
-              onClick={() => navigate('/citizens')}
+              onClick={() => navigate('/intelligence-search')}
             >
-              Return to list
+              Back to search
             </button>
           </div>
         )}
@@ -169,35 +203,44 @@ export default function PersonProfile() {
             <header className="profile-header-card card">
               <div className="profile-header-main">
                 <div className="profile-avatar" aria-hidden="true">
-                  {citizen.full_name?.charAt(0)?.toUpperCase() || '?'}
+                  {displayName?.charAt(0)?.toUpperCase() || '?'}
                 </div>
                 <div className="profile-header-text">
-                  <span className="profile-eyebrow">Person 360</span>
-                  <h1>{displayValue(citizen.full_name)}</h1>
+                  <span className="profile-eyebrow">
+                    {profileMode === 'citizen' ? 'Person 360' : 'Upload intelligence profile'}
+                  </span>
+                  <h1>{displayValue(displayName)}</h1>
                   <p className="profile-header-district">{displayValue(district)}</p>
                 </div>
               </div>
               <div className="profile-header-badges">
                 <span className="profile-badge profile-badge-360">360° Intelligence Profile</span>
-                <span className="profile-badge profile-badge-id">ID #{citizen.id}</span>
+                <span className="profile-badge profile-badge-id">{profileIdLabel}</span>
+                {meta.profile_type && meta.profile_type !== 'citizen' && (
+                  <span className="profile-badge">Source: {meta.profile_type}</span>
+                )}
                 {meta.profile_confidence && (
                   <span className="profile-badge">Confidence: {meta.profile_confidence}</span>
                 )}
                 <SensitiveAccessBadge {...accessFlags} />
-                <button
-                  type="button"
-                  className="btn btn-primary profile-relationships-btn"
-                  onClick={() => navigate(`/relationships/${citizen.id}`)}
-                >
-                  View Relationships
-                </button>
+                {showRelationships && (
+                  <button
+                    type="button"
+                    className="btn btn-primary profile-relationships-btn"
+                    onClick={() => navigate(`/relationships/${citizen.id}`)}
+                  >
+                    View Relationships
+                  </button>
+                )}
               </div>
             </header>
 
             <section className="profile-summary-card card" aria-label="Profile summary">
               <h2>Unified intelligence view</h2>
               <p>
-                Merged data from citizen registry, upload staging, and analytics stores.
+                {profileMode === 'citizen'
+                  ? 'Merged data from citizen registry, upload staging, and analytics stores.'
+                  : 'Built from uploaded staging and analytics data — includes all fields from this upload row.'}
                 {meta.total_field_count != null && (
                   <>
                     {' '}
@@ -226,7 +269,7 @@ export default function PersonProfile() {
 
             {sections.length === 0 ? (
               <div className="card profile-360-empty">
-                <p>No extended upload fields linked to this person yet.</p>
+                <p>No extended upload fields found for this record.</p>
               </div>
             ) : (
               <div className="profile-360-sections">

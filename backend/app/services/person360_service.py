@@ -10,7 +10,12 @@ from app.core.logging_config import get_logger
 from app.models.citizen import Citizen
 from app.models.person_relationship import PersonRelationship
 from app.models.person_source import PersonSource
-from app.services.person360_profile import build_person_360_profile, mask_profile_360_fields
+from app.services.person360_profile import (
+    build_duckdb_360_profile,
+    build_person_360_profile,
+    build_staging_360_profile,
+    mask_profile_360_fields,
+)
 
 logger = get_logger("gpip.person360")
 
@@ -168,7 +173,10 @@ def search_persons(
 
 
 def get_search_summary(db: Session) -> dict:
-    total_persons = db.query(Citizen).count()
+    from app.services.data_scope_service import get_dataset_scope
+
+    scope = get_dataset_scope(db)
+    total_persons = scope["citizens"]
     linked_persons = db.query(PersonSource.citizen_id).distinct().count()
 
     dept_rows = (
@@ -204,11 +212,109 @@ def get_search_summary(db: Session) -> dict:
 
     return {
         "total_persons": total_persons,
+        "total_staging_rows": scope["person_staging"],
+        "total_uploaded_data_rows": scope["uploaded_data"],
+        "intelligence_records": max(scope["person_staging"], scope["uploaded_data"]),
         "linked_persons": linked_persons,
         "department_distribution": department_distribution,
         "confidence_distribution": conf,
         "relationship_counts": relationship_counts,
+        "dataset_scope": scope,
     }
+
+
+def get_staging_profile(db: Session, staging_id: int, *, mask_mobile: bool = True) -> dict:
+    profile_360 = build_staging_360_profile(db, staging_id)
+    if not profile_360:
+        raise http_error(404, "Staging record not found")
+
+    staging_row = _safe_json_loads_row(staging_id, db)
+    citizen_id = profile_360.get("citizen_id")
+    citizen_dict = None
+    if citizen_id:
+        citizen = db.query(Citizen).filter(Citizen.id == int(citizen_id)).first()
+        if citizen:
+            citizen_dict = _citizen_to_public_dict(citizen) if mask_mobile else {
+                "id": citizen.id,
+                "full_name": citizen.full_name,
+                "mobile": citizen.mobile,
+                "district": citizen.district,
+                "village": citizen.village,
+                "dob": citizen.dob,
+            }
+    elif staging_row:
+        citizen_dict = {
+            "id": None,
+            "full_name": staging_row.full_name,
+            "mobile": _mask_mobile(staging_row.mobile) if mask_mobile else staging_row.mobile,
+            "district": staging_row.district,
+            "village": staging_row.village,
+            "dob": staging_row.dob,
+        }
+
+    if mask_mobile:
+        profile_360 = mask_profile_360_fields(profile_360)
+
+    return {
+        "profile_type": "staging",
+        "staging_id": int(staging_id),
+        "citizen": citizen_dict,
+        "citizen_id": citizen_id,
+        "profile_confidence": staging_row.confidence_level if staging_row else "LOW",
+        "source_count": profile_360.get("source_count", 0),
+        "linked_departments": profile_360.get("linked_departments", []),
+        "relationship_summary": {},
+        "profile_360": profile_360,
+    }
+
+
+def get_duckdb_row_profile(
+    db: Session,
+    upload_id: int,
+    row_index: int,
+    *,
+    mask_mobile: bool = True,
+) -> dict:
+    profile_360 = build_duckdb_360_profile(db, upload_id, row_index)
+    if not profile_360:
+        raise http_error(404, "Uploaded data row not found")
+
+    if mask_mobile:
+        profile_360 = mask_profile_360_fields(profile_360)
+
+    citizen_id = profile_360.get("citizen_id")
+    citizen_dict = None
+    if citizen_id:
+        citizen = db.query(Citizen).filter(Citizen.id == int(citizen_id)).first()
+        if citizen:
+            citizen_dict = _citizen_to_public_dict(citizen) if mask_mobile else {
+                "id": citizen.id,
+                "full_name": citizen.full_name,
+                "mobile": citizen.mobile,
+                "district": citizen.district,
+                "village": citizen.village,
+                "dob": citizen.dob,
+            }
+
+    return {
+        "profile_type": "duckdb",
+        "upload_id": int(upload_id),
+        "duckdb_row_index": int(row_index),
+        "staging_id": profile_360.get("staging_id"),
+        "citizen": citizen_dict,
+        "citizen_id": citizen_id,
+        "profile_confidence": "MEDIUM",
+        "source_count": 1,
+        "linked_departments": profile_360.get("linked_departments", []),
+        "relationship_summary": {},
+        "profile_360": profile_360,
+    }
+
+
+def _safe_json_loads_row(staging_id: int, db: Session):
+    from app.models.person_staging import PersonStaging
+
+    return db.query(PersonStaging).filter(PersonStaging.id == int(staging_id)).first()
 
 
 def get_person_profile(db: Session, citizen_id: int, *, mask_mobile: bool = True) -> dict:
