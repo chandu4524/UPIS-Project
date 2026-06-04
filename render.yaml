@@ -1,0 +1,57 @@
+# Render Blueprint — GPIP API with OCR (Docker required).
+#
+# Deploy steps:
+#   1. Connect GitHub repo on Render
+#   2. Apply this blueprint OR create Web Service manually:
+#        Runtime: Docker
+#        Dockerfile Path: backend/Dockerfile
+#        Docker Context: backend
+#   3. Set frontend VITE_API_BASE_URL=https://<service>.onrender.com/api
+#
+# Do NOT use "Python" native runtime — Tesseract/Poppler are not available there.
+
+services:
+  - type: web
+    name: gpip-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /api/ocr/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: TESSERACT_CMD
+        value: /usr/bin/tesseract
+      - key: POPPLER_PATH
+        value: /usr/bin
+      - key: OCR_FOLDER
+        value: /tmp/ocr_uploads
+      - key: UPLOAD_FOLDER
+        value: /tmp/uploads
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: "120"
+      - key: OCR_REQUEST_TIMEOUT_SECONDS
+        value: "300"
+      - key: OCR_PDF_DPI
+        value: "150"
+      - key: OCR_MAX_PAGES
+        value: "15"
+      - key: OCR_MAX_FILE_BYTES
+        value: "15728640"
+      - key: OCR_USE_PADDLE
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gpip-db
+          property: connectionString
+
+databases:
+  - name: gpip-db
+    plan: free
+    databaseName: gpip
+    user: gpip

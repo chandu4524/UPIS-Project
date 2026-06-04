@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+.git
+.gitignore
+uploads/*
+ocr_uploads/*
+data/*.db
+data/*.duckdb
+*.md
+tools/
+tests/
+.venv
+venv/
