@@ -57,6 +57,18 @@ ensure_runtime_directories()
 async def lifespan(app: FastAPI):
     log_config_summary(logger)
     log_startup_diagnostics(logger)
+    try:
+        from app.services.ocr_runtime import apply_runtime_configuration
+
+        ocr_boot = apply_runtime_configuration()
+        logger.info(
+            "OCR startup ocr_ready=%s tesseract=%s poppler=%s",
+            ocr_boot.get("ocr_ready"),
+            ocr_boot.get("tesseract_binary"),
+            ocr_boot.get("poppler_available"),
+        )
+    except Exception as exc:
+        logger.warning("OCR runtime configuration skipped: %s", exc)
     logger.info("Initializing database…")
     init_database()
     db = SessionLocal()

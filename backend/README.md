@@ -46,6 +46,19 @@ python -m app.database.init_db
 
 API docs: http://127.0.0.1:8000/docs
 
+## OCR on Render (Docker required)
+
+Native Python on Render **cannot** run OCR (missing Tesseract/Poppler). Use the Docker image:
+
+```bash
+cd backend
+docker build -t gpip-api .
+docker run --rm -p 8000:8000 gpip-api
+curl http://localhost:8000/api/ocr/health
+```
+
+Full instructions: [DEPLOY_RENDER_OCR.md](../DEPLOY_RENDER_OCR.md) (repository root).
+
 ## Endpoints
 
 | Method | Path | Auth |

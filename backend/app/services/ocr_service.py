@@ -1,49 +1,125 @@
+"""OCR processing for PDF and image uploads."""
+
+from __future__ import annotations
+
+import gc
+import logging
 import math
 import os
 import re
 import shutil
+import time
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.core.config import OCR_FOLDER
+from app.core.config import APP_ENV, OCR_FOLDER
 from app.core.exceptions import http_error
 from app.models.ocr_document import OcrDocument
+from app.services.ocr_runtime import (
+    check_ocr_dependencies,
+    configure_pytesseract,
+    resolve_poppler_path,
+)
 
-MAX_OCR_PAGES = 20
+logger = logging.getLogger("gpip.ocr")
+
+MAX_OCR_PAGES = int(os.getenv("OCR_MAX_PAGES", "20"))
+MAX_OCR_FILE_BYTES = int(os.getenv("OCR_MAX_FILE_BYTES", str(15 * 1024 * 1024)))
+OCR_PDF_DPI = int(os.getenv("OCR_PDF_DPI", "150" if APP_ENV in ("production", "prod") else "200"))
+OCR_USE_PADDLE = os.getenv("OCR_USE_PADDLE", "false").strip().lower() in ("1", "true", "yes")
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
+
+_paddle_engine = None
 
 
 def ensure_ocr_folder() -> None:
     os.makedirs(OCR_FOLDER, exist_ok=True)
+    logger.debug("OCR folder ensured: %s", OCR_FOLDER)
+
+
+def assert_ocr_runtime_ready() -> Dict[str, Any]:
+    """Fail fast with a clear message when system OCR binaries are missing."""
+    status = check_ocr_dependencies()
+    if not status.get("ready"):
+        logger.error(
+            "OCR runtime not ready: tesseract=%s poppler=%s notes=%s",
+            status.get("tesseract_binary"),
+            status.get("poppler_available"),
+            status.get("notes"),
+        )
+        raise http_error(
+            503,
+            "OCR is not available on this server. Install Tesseract and Poppler (see deployment docs).",
+            status,
+        )
+    return status
 
 
 def validate_ocr_file(file: UploadFile) -> None:
     if not file.filename:
         raise http_error(400, "No file provided")
     name = file.filename.lower()
-    if not (name.endswith(".pdf") or name.endswith(".png") or name.endswith(".jpg") or name.endswith(".jpeg")):
-        raise http_error(400, "Only PDF or image files are supported for OCR processing (PDF, PNG, JPG, JPEG)")
+    if not (
+        name.endswith(".pdf")
+        or name.endswith(".png")
+        or name.endswith(".jpg")
+        or name.endswith(".jpeg")
+    ):
+        raise http_error(
+            400,
+            "Only PDF or image files are supported for OCR processing (PDF, PNG, JPG, JPEG)",
+        )
 
 
 def save_ocr_file(file: UploadFile) -> str:
     ensure_ocr_folder()
-    safe_name = os.path.basename(file.filename)
+    safe_name = os.path.basename(file.filename or "upload")
     unique_name = f"{uuid.uuid4().hex}_{safe_name}"
     file_path = os.path.join(OCR_FOLDER, unique_name)
+
+    size = 0
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_OCR_FILE_BYTES:
+                buffer.close()
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                raise http_error(
+                    413,
+                    f"File too large for OCR (max {MAX_OCR_FILE_BYTES // (1024 * 1024)} MB)",
+                )
+            buffer.write(chunk)
+
+    logger.info(
+        "OCR file saved path=%s size_bytes=%s filename=%s",
+        file_path,
+        size,
+        safe_name,
+    )
     return file_path
+
+
+def _configure_tesseract() -> None:
+    cmd = configure_pytesseract()
+    if cmd:
+        logger.debug("Tesseract configured path=%s", cmd)
 
 
 def _ocr_with_pytesseract(image) -> Tuple[str, float]:
     import pytesseract
     from PIL import Image
 
+    _configure_tesseract()
     if not isinstance(image, Image.Image):
         image = Image.fromarray(image)
     data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
@@ -63,14 +139,23 @@ def _ocr_with_pytesseract(image) -> Tuple[str, float]:
     return text, avg_conf
 
 
+def _get_paddle_engine():
+    global _paddle_engine
+    if _paddle_engine is None:
+        from paddleocr import PaddleOCR
+
+        logger.info("Initializing PaddleOCR engine (one-time)")
+        _paddle_engine = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+    return _paddle_engine
+
+
 def _ocr_with_paddle(image) -> Tuple[str, float]:
     import numpy as np
-    from paddleocr import PaddleOCR
     from PIL import Image
 
     if not isinstance(image, Image.Image):
         image = Image.fromarray(image)
-    ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+    ocr = _get_paddle_engine()
     result = ocr.ocr(np.array(image), cls=True)
     lines = []
     confidences = []
@@ -85,23 +170,47 @@ def _ocr_with_paddle(image) -> Tuple[str, float]:
 
 
 def _ocr_image(image) -> Tuple[str, float]:
+    errors: List[str] = []
     try:
         return _ocr_with_pytesseract(image)
-    except Exception:
+    except Exception as exc:
+        errors.append(f"pytesseract: {exc}")
+        logger.warning("pytesseract failed: %s", exc)
+
+    if OCR_USE_PADDLE:
         try:
             return _ocr_with_paddle(image)
         except Exception as exc:
-            raise http_error(
-                500,
-                "OCR engine unavailable. Install Tesseract OCR and Poppler, or PaddleOCR.",
-                str(exc),
-            ) from exc
+            errors.append(f"paddle: {exc}")
+            logger.warning("PaddleOCR failed: %s", exc)
+
+    raise http_error(
+        500,
+        "OCR engine unavailable. Ensure Tesseract is installed and on PATH.",
+        "; ".join(errors),
+    )
 
 
 def _pdf_to_images(file_path: str) -> List:
     from pdf2image import convert_from_path
 
-    return convert_from_path(file_path, dpi=200, first_page=1, last_page=MAX_OCR_PAGES)
+    poppler_path = resolve_poppler_path()
+    kwargs = {
+        "dpi": OCR_PDF_DPI,
+        "first_page": 1,
+        "last_page": MAX_OCR_PAGES,
+    }
+    if poppler_path:
+        kwargs["poppler_path"] = poppler_path
+        logger.info("Using POPPLER_PATH=%s", poppler_path)
+
+    logger.info(
+        "Converting PDF to images path=%s dpi=%s max_pages=%s",
+        file_path,
+        OCR_PDF_DPI,
+        MAX_OCR_PAGES,
+    )
+    return convert_from_path(file_path, **kwargs)
 
 
 def _extract_text_pdf_fallback(file_path: str) -> Tuple[str, float]:
@@ -137,26 +246,53 @@ def process_pdf_ocr(file_path: str, filename: str) -> Dict[str, Any]:
     page_confidences: List[float] = []
     engine = "pytesseract"
     pages_processed = 0
+    pdf_error: Optional[str] = None
 
     try:
         images = _pdf_to_images(file_path)
         pages_processed = len(images)
+        logger.info("PDF page images ready count=%s file=%s", pages_processed, filename)
+
         for idx, image in enumerate(images, start=1):
-            text, conf = _ocr_image(image)
-            page_texts.append(f"--- Page {idx} ---\n{text}")
-            page_confidences.append(conf)
-    except Exception:
+            try:
+                text, conf = _ocr_image(image)
+                page_texts.append(f"--- Page {idx} ---\n{text}")
+                page_confidences.append(conf)
+                logger.info(
+                    "OCR page %s/%s chars=%s conf=%.1f",
+                    idx,
+                    pages_processed,
+                    len(text or ""),
+                    conf,
+                )
+            finally:
+                try:
+                    image.close()
+                except Exception:
+                    pass
+            gc.collect()
+    except Exception as exc:
+        pdf_error = str(exc)
+        logger.warning(
+            "pdf2image failed for %s (poppler may be missing): %s",
+            filename,
+            exc,
+            exc_info=True,
+        )
         engine = "pypdf2_fallback"
         text, conf = _extract_text_pdf_fallback(file_path)
         if text:
             page_texts = [text]
             page_confidences = [conf]
             pages_processed = 1
+            logger.info("PyPDF2 text fallback chars=%s", len(text))
         else:
             raise http_error(
                 500,
-                "Failed to process PDF. Ensure Poppler is installed for scanned PDFs.",
-            )
+                "Failed to process PDF. For scanned PDFs install Poppler (pdftoppm). "
+                "Text-only PDFs may work without Poppler.",
+                pdf_error,
+            ) from exc
 
     extracted_text = "\n\n".join(page_texts).strip()
     confidence_score = (
@@ -178,20 +314,49 @@ def process_pdf_ocr(file_path: str, filename: str) -> Dict[str, Any]:
 
 
 def process_file_ocr(file_path: str, filename: str) -> Dict[str, Any]:
+    started = time.perf_counter()
     lower = (filename or "").lower()
+    file_size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
+    logger.info(
+        "OCR processing start time=%s file=%s size_bytes=%s is_pdf=%s dpi=%s max_pages=%s",
+        datetime.utcnow().isoformat() + "Z",
+        filename,
+        file_size,
+        lower.endswith(".pdf"),
+        OCR_PDF_DPI,
+        MAX_OCR_PAGES,
+    )
+
     if lower.endswith(".pdf"):
-        return process_pdf_ocr(file_path, filename)
+        result = process_pdf_ocr(file_path, filename)
+        logger.info(
+            "OCR processing complete file=%s elapsed_sec=%.2f pages=%s engine=%s",
+            filename,
+            time.perf_counter() - started,
+            result.get("pages_processed"),
+            result.get("ocr_engine"),
+        )
+        return result
 
     try:
         from PIL import Image
     except Exception as exc:
         raise http_error(500, "Image OCR requires Pillow to be installed", str(exc)) from exc
 
+    image = None
     try:
         image = Image.open(file_path)
         text, conf = _ocr_image(image)
         extracted_text = (text or "").strip()
         table_rows = extract_table_rows(extracted_text)
+        elapsed = time.perf_counter() - started
+        logger.info(
+            "OCR processing complete file=%s elapsed_sec=%.2f chars=%s conf=%.1f engine=image_ocr",
+            filename,
+            elapsed,
+            len(extracted_text),
+            conf,
+        )
         return {
             "filename": filename,
             "extracted_text": extracted_text,
@@ -201,8 +366,27 @@ def process_file_ocr(file_path: str, filename: str) -> Dict[str, Any]:
             "table_rows": table_rows,
             "row_count": len(table_rows),
         }
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise http_error(500, "Failed to process image for OCR", str(exc)) from exc
+        logger.exception(
+            "OCR processing failed file=%s size_bytes=%s elapsed_sec=%.2f error=%s",
+            filename,
+            file_size,
+            time.perf_counter() - started,
+            exc,
+        )
+        raise http_error(
+            500,
+            "Failed to process image for OCR. Ensure Tesseract is installed (Docker image on Render).",
+            str(exc),
+        ) from exc
+    finally:
+        if image is not None:
+            try:
+                image.close()
+            except Exception:
+                pass
 
 
 def ocr_document_to_dict(doc: OcrDocument, include_text: bool = True) -> dict:
@@ -231,6 +415,12 @@ def save_ocr_document(db: Session, result: Dict[str, Any]) -> OcrDocument:
     db.add(record)
     db.commit()
     db.refresh(record)
+    logger.info(
+        "OCR document saved id=%s filename=%s confidence=%s",
+        record.id,
+        record.filename,
+        record.confidence_score,
+    )
     return record
 
 

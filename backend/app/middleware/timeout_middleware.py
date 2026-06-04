@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -17,19 +18,30 @@ class RequestTimeoutMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.timeout_seconds = max(30, int(timeout_seconds))
 
+    def _timeout_for_path(self, path: str) -> int:
+        if path.rstrip("/") == "/api/ocr/upload":
+            ocr_timeout = int(os.getenv("OCR_REQUEST_TIMEOUT_SECONDS", "300"))
+            return max(self.timeout_seconds, min(ocr_timeout, 600))
+        return self.timeout_seconds
+
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in ("/api/health", "/", "/api/health/"):
+        if request.url.path.rstrip("/") in (
+            "/api/health",
+            "/api/ocr/health",
+            "/",
+        ):
             return await call_next(request)
 
+        timeout = self._timeout_for_path(request.url.path)
         try:
             return await asyncio.wait_for(
                 call_next(request),
-                timeout=self.timeout_seconds,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             logger.error(
                 "Request timeout (%ss) %s %s",
-                self.timeout_seconds,
+                timeout,
                 request.method,
                 request.url.path,
             )

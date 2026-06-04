@@ -20,62 +20,10 @@ _STARTUP_DIAGNOSTICS: Dict[str, Any] = {}
 
 
 def check_ocr_dependencies() -> Dict[str, Any]:
-    """Report OCR stack availability without failing startup."""
-    status = {
-        "pytesseract": False,
-        "pdf2image": False,
-        "pillow": False,
-        "tesseract_binary": False,
-        "poppler_available": False,
-        "paddleocr": False,
-        "ready": False,
-        "notes": [],
-    }
+    """Report OCR stack availability (delegates to ocr_runtime)."""
+    from app.services.ocr_runtime import check_ocr_dependencies as _check
 
-    try:
-        import pytesseract
-
-        status["pytesseract"] = True
-        try:
-            pytesseract.get_tesseract_version()
-            status["tesseract_binary"] = True
-        except Exception:
-            status["notes"].append("Tesseract binary not found on PATH")
-    except ImportError:
-        status["notes"].append("pytesseract package not installed")
-
-    try:
-        import pdf2image  # noqa: F401
-
-        status["pdf2image"] = True
-    except ImportError:
-        status["notes"].append("pdf2image package not installed")
-
-    try:
-        from PIL import Image  # noqa: F401
-
-        status["pillow"] = True
-    except ImportError:
-        status["notes"].append("Pillow package not installed")
-
-    if shutil.which("pdftoppm") or shutil.which("pdftocairo"):
-        status["poppler_available"] = True
-    else:
-        status["notes"].append("Poppler utilities not detected on PATH")
-
-    try:
-        import paddleocr  # noqa: F401
-
-        status["paddleocr"] = True
-    except ImportError:
-        pass
-
-    status["ready"] = (
-        status["pytesseract"]
-        and status["tesseract_binary"]
-        and status["pdf2image"]
-    )
-    return status
+    return _check()
 
 
 def verify_storage_folders() -> Dict[str, Any]:
