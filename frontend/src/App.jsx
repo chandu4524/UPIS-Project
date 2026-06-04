@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { FRONTEND_LOGIN_ROUTE } from './auth/logoutAndRedirect';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -26,7 +27,9 @@ export default function App() {
     <ToastProvider>
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path={FRONTEND_LOGIN_ROUTE} element={<Login />} />
+        <Route path="/login" element={<Navigate to={FRONTEND_LOGIN_ROUTE} replace />} />
+        <Route path="/signin" element={<Navigate to={FRONTEND_LOGIN_ROUTE} replace />} />
         <Route
           path="/dashboard"
           element={
@@ -179,7 +182,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

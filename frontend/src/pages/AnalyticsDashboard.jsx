@@ -17,6 +17,7 @@ import {
 import Layout from '../components/Layout';
 import { fetchAnalyticsDashboard } from '../services/analyticsService';
 import { formatError } from '../utils/formatError';
+import { handleUnauthorizedIfNeeded } from '../auth/handleUnauthorized';
 import '../styles/analyticsDashboard.css';
 
 const CHART_COLORS = ['#0b2545', '#134074', '#c9a227', '#1e5a8a', '#8a6d1f', '#2d6a4f', '#9b2226'];
@@ -121,6 +122,10 @@ export default function AnalyticsDashboard() {
         setLoadError('Unable to load analytics data. Please try again.');
       }
     } catch (err) {
+      if (handleUnauthorizedIfNeeded(err)) {
+        setLoading(false);
+        return;
+      }
       console.warn('[Analytics] dashboard load failed', err);
       setLoadError(formatError(err, 'Failed to load analytics dashboard'));
       setSummary(null);

@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { getAuthLoginUrl } from '../config/apiConfig';
 import { getRoleLabel as roleLabelFromConfig, normalizeRole } from '../config/rbac';
+import { logoutAndRedirect } from '../auth/logoutAndRedirect';
 import {
-  clearAuth,
   getRole,
   getRoleLabel,
   getUsername,
@@ -28,7 +28,7 @@ export const loginUser = async (username, password) => {
 };
 
 export const logout = () => {
-  clearAuth();
+  logoutAndRedirect();
 };
 
 export const isAuthenticated = () => isLoggedIn();

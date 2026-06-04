@@ -7,9 +7,13 @@ import Spinner from '../components/Spinner';
 import {
   fetchOcrDetail,
   fetchOcrHistory,
+  fetchOcrHealth,
+  fetchOcrStatus,
   uploadOcrPdf,
+  validateOcrFileClient,
 } from '../services/ocrService';
 import { formatError } from '../utils/formatError';
+import { handleUnauthorizedIfNeeded } from '../auth/handleUnauthorized';
 import { formatUploadedDate } from '../utils/formatDate';
 import '../styles/ocrProcessing.css';
 
@@ -45,6 +49,31 @@ export default function OCRProcessing() {
   const [historyError, setHistoryError] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [ocrReady, setOcrReady] = useState(null);
+  const [ocrStatusNote, setOcrStatusNote] = useState('');
+
+  const loadOcrStatus = useCallback(async () => {
+    try {
+      let data;
+      try {
+        data = await fetchOcrStatus();
+      } catch (err) {
+        if (handleUnauthorizedIfNeeded(err)) {
+          return;
+        }
+        data = await fetchOcrHealth();
+      }
+      setOcrReady(Boolean(data.ocr_ready));
+      const notes = data.dependencies?.notes;
+      setOcrStatusNote(Array.isArray(notes) && notes.length ? notes.join(' · ') : '');
+    } catch (err) {
+      if (handleUnauthorizedIfNeeded(err)) {
+        return;
+      }
+      setOcrReady(null);
+      setOcrStatusNote('');
+    }
+  }, []);
 
   const loadHistory = useCallback(async (pageNum = 1) => {
     setHistoryLoading(true);
@@ -56,6 +85,9 @@ export default function OCRProcessing() {
       setHistoryPages(data.total_pages ?? 0);
       setHistoryPage(data.page ?? pageNum);
     } catch (err) {
+      if (handleUnauthorizedIfNeeded(err)) {
+        return;
+      }
       setHistoryError(formatError(err, 'Failed to load OCR history'));
       setHistory([]);
     } finally {
@@ -65,7 +97,8 @@ export default function OCRProcessing() {
 
   useEffect(() => {
     loadHistory(1);
-  }, [loadHistory]);
+    loadOcrStatus();
+  }, [loadHistory, loadOcrStatus]);
 
   const loadDetail = async (documentId) => {
     setSelectedId(documentId);
@@ -83,6 +116,10 @@ export default function OCRProcessing() {
         created_at: data.created_at,
       });
     } catch (err) {
+      if (handleUnauthorizedIfNeeded(err)) {
+        setDetailLoading(false);
+        return;
+      }
       setError(formatError(err, 'Failed to load OCR document'));
     } finally {
       setDetailLoading(false);
@@ -90,14 +127,16 @@ export default function OCRProcessing() {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      setError('Please select a PDF or image file');
+    const validationError = validateOcrFileClient(file);
+    if (validationError) {
+      setError(validationError);
       return;
     }
-    const lower = file.name.toLowerCase();
-    const ok = lower.endsWith('.pdf') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg');
-    if (!ok) {
-      setError('Only PDF or image files are supported (PDF, PNG, JPG, JPEG)');
+    if (ocrReady === false) {
+      setError(
+        'OCR is not available on this server (Tesseract/Poppler missing). '
+        + 'Deploy the Docker backend image or check /api/health ocr_dependencies.',
+      );
       return;
     }
 
@@ -134,6 +173,9 @@ export default function OCRProcessing() {
       setFile(null);
       loadHistory(1);
     } catch (err) {
+      if (handleUnauthorizedIfNeeded(err)) {
+        return;
+      }
       setError(formatError(err, 'OCR processing failed'));
     } finally {
       setUploading(false);
@@ -158,6 +200,15 @@ export default function OCRProcessing() {
             Upload PDF or scanned PDF documents for optical character recognition.
             Extracted text and table rows are returned as structured JSON.
           </p>
+          {ocrReady === false && (
+            <div className="alert alert-error" role="alert">
+              OCR engine is not ready on this server.
+              {ocrStatusNote ? ` ${ocrStatusNote}` : ' Install Tesseract and Poppler (use Docker on Render).'}
+            </div>
+          )}
+          {ocrReady === true && (
+            <p className="ocr-ready-hint" role="status">OCR engine ready on server.</p>
+          )}
         </section>
 
         <section className="ocr-upload-card card">

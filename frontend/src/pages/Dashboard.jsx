@@ -10,6 +10,7 @@ import { fetchDashboard, fetchDashboardAnalytics } from '../services/dashboardSe
 import { getStoredUsername } from '../services/authService';
 import { subscribeDashboardRefresh } from '../utils/appRefresh';
 import { formatError } from '../utils/formatError';
+import { handleUnauthorizedIfNeeded } from '../auth/handleUnauthorized';
 import { formatUploadedDate } from '../utils/formatDate';
 import '../styles/dashboard.css';
 
@@ -31,6 +32,14 @@ export default function Dashboard() {
         fetchDashboard(),
         fetchDashboardAnalytics(),
       ]);
+
+      for (const result of [dashboardResult, analyticsResult]) {
+        if (result.status === 'rejected' && handleUnauthorizedIfNeeded(result.reason)) {
+          setLoading(false);
+          setAnalyticsLoading(false);
+          return;
+        }
+      }
 
       if (dashboardResult.status === 'fulfilled') {
         setData(dashboardResult.value);

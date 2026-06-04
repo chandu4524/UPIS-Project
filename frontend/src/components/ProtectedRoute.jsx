@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { FRONTEND_LOGIN_ROUTE } from '../auth/logoutAndRedirect';
 import { canAccessRoute, getDefaultRouteForRole } from '../config/rbac';
 import { getStoredRole, isAuthenticated } from '../services/authService';
 import { notify } from '../utils/notify';
@@ -15,7 +16,7 @@ export default function ProtectedRoute({ children }) {
   }, [location.state]);
 
   if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={FRONTEND_LOGIN_ROUTE} replace />;
   }
 
   if (!canAccessRoute(role, location.pathname)) {

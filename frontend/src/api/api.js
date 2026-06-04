@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { getApiBaseUrl } from '../config/apiConfig';
-import { clearAuth, getToken } from '../utils/authStorage';
+import { getToken } from '../utils/authStorage';
 import { formatError } from '../utils/formatError';
 import { notify } from '../utils/notify';
+import { logoutAndRedirect } from '../auth/logoutAndRedirect';
 
 const api = axios.create({
   baseURL: getApiBaseUrl(),
@@ -20,13 +21,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      logoutAndRedirect();
+      return Promise.reject(error);
+    }
+
     const status = error.response?.status;
-    if (status === 401) {
-      clearAuth();
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
-    } else if (status === 504) {
+    if (status === 504) {
       notify(
         formatError(error, 'Request timed out. Please try again.'),
         'warning',
@@ -44,7 +45,7 @@ api.interceptors.response.use(
       notify('Unable to reach the server. Check your connection.', 'error');
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

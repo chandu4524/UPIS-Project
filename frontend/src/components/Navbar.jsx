@@ -1,6 +1,7 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { logoutAndRedirect } from '../auth/logoutAndRedirect';
 import SystemStatus from './SystemStatus';
-import { getStoredRoleLabel, getStoredUsername, logout } from '../services/authService';
+import { getStoredRoleLabel, getStoredUsername } from '../services/authService';
 
 const PAGE_TITLES = {
   '/dashboard': 'Secure Dashboard',
@@ -20,7 +21,6 @@ const PAGE_TITLES = {
 
 export default function Navbar({ onMenuToggle, sidebarOpen = false }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const username = getStoredUsername() || 'Officer';
   const roleLabel = getStoredRoleLabel();
   const title = location.pathname.startsWith('/reports/preview')
@@ -34,8 +34,7 @@ export default function Navbar({ onMenuToggle, sidebarOpen = false }) {
         : PAGE_TITLES[location.pathname] || 'GPIP Portal';
 
   const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+    logoutAndRedirect();
   };
 
   return (

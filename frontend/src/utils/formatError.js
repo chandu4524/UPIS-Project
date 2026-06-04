@@ -3,7 +3,12 @@ import { normalizeUploadTypeError } from '../constants/uploadFormats';
 /**
  * Extract a user-friendly message from API / network errors.
  */
-export function formatError(err, fallback = 'Something went wrong. Please try again.') {  if (!err) return fallback;
+export function formatError(err, fallback = 'Something went wrong. Please try again.') {
+  if (!err) return fallback;
+
+  if (err.response?.status === 401) {
+    return 'Your session has expired. Please sign in again.';
+  }
 
   if (err.code === 'ECONNABORTED') {
     return 'The request timed out. Please check your connection and try again.';

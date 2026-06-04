@@ -11,17 +11,27 @@ export function getApiBaseUrl() {
 }
 
 /**
- * Login endpoint base (not under /api prefix on the backend).
+ * Backend login POST URL (not a frontend route — do not use for 401 redirects).
+ * FastAPI mounts user_router at app root: POST /login (see user_api.py).
  */
 export function getAuthLoginUrl() {
   const apiBase = getApiBaseUrl();
+
   if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) {
     try {
       const url = new URL(apiBase);
       return `${url.origin}/login`;
     } catch {
-      return '/login';
+      /* fall through */
     }
   }
-  return '/login';
+
+  // Local dev: login is at backend root (/login), not under /api.
+  // Avoid /api-auth/* — Vite's /api proxy prefix captures /api-auth and forwards 404.
+  const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN;
+  const origin =
+    backendOrigin != null && String(backendOrigin).trim() !== ''
+      ? String(backendOrigin).trim().replace(/\/$/, '')
+      : 'http://127.0.0.1:8000';
+  return `${origin}/login`;
 }

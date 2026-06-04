@@ -1,4 +1,5 @@
 import api from '../api/api';
+import { handleUnauthorizedIfNeeded } from '../auth/handleUnauthorized';
 
 function logLoaded(label, payload) {
   console.log(`[Analytics] ${label} loaded`, payload);
@@ -62,6 +63,12 @@ export async function fetchAnalyticsDashboard() {
   ]);
 
   const [summaryResult, sourcesResult, validationResult, trendsResult] = results;
+
+  for (const result of results) {
+    if (result.status === 'rejected' && handleUnauthorizedIfNeeded(result.reason)) {
+      throw result.reason;
+    }
+  }
 
   const errors = {
     summary: null,
