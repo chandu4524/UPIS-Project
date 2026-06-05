@@ -563,22 +563,27 @@ def process_dataframe_upload(
     db.commit()
 
     summary_warning: Optional[str] = None
+
     try:
         from app.services.duckdb_analytics_service import sync_upload_summary
 
         summary_warning = sync_upload_summary(
-    upload_id=upload_record.id,
-    source_file=filename,
-    uploaded_at=upload_record.uploaded_at,
-    department_name=department_name,
-    validation=validation,
-)
+            upload_id=upload_record.id,
+            source_file=filename,
+            uploaded_at=upload_record.uploaded_at,
+            department_name=department_name,
+            validation=validation,
+        )
 
-logger.error(
-    "SYNC_UPLOAD_SUMMARY RESULT: upload_id=%s warning=%s",
-    upload_record.id,
-    summary_warning,
-)
+        logger.info(
+            "SYNC_UPLOAD_SUMMARY RESULT: upload_id=%s warning=%s",
+            upload_record.id,
+            summary_warning,
+        )
+
+    except Exception as exc:
+        summary_warning = f"DuckDB summary sync failed: {exc}"
+
     analytics_warning = _build_analytics_warning(analytics_chunk_warnings, summary_warning)
     skipped_duplicates = int(validation.get("skipped_duplicates") or 0)
     validation_warning = None
