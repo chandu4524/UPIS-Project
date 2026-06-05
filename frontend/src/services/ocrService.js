@@ -23,12 +23,36 @@ export function validateOcrFileClient(file) {
   return null;
 }
 
-export async function fetchOcrStatus() {
-  const { data } = await api.get('/ocr/status');
+/**
+ * Parse and validate an OCR document id before calling the status API.
+ * Returns null when id is undefined, null, empty string, NaN, or non-positive.
+ */
+export function parseOcrDocumentId(documentId) {
+  if (documentId === undefined || documentId === null || documentId === '') {
+    return null;
+  }
+  const parsed = Number(documentId);
+  if (Number.isNaN(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+/** Fetch processing status for one OCR document (requires valid integer id). */
+export async function fetchOcrStatus(documentId) {
+  const id = parseOcrDocumentId(documentId);
+  if (id === null) {
+    throw new Error('A valid OCR document id is required');
+  }
+  console.log('OCR document id:', id);
+  const { data } = await api.get(`/ocr/status/${id}`);
   return data;
 }
 
-/** Public probe (no auth) — same fields as Render health check. */
+/** Alias for fetchOcrStatus. */
+export const getOCRStatus = fetchOcrStatus;
+
+/** Public probe (no auth) — runtime OCR readiness for page banner. */
 export async function fetchOcrHealth() {
   const base = api.defaults.baseURL || '/api';
   const url = `${base.replace(/\/$/, '')}/ocr/health`;
@@ -61,6 +85,11 @@ export async function fetchOcrHistory({ page = 1, pageSize = 10 } = {}) {
 }
 
 export async function fetchOcrDetail(documentId) {
-  const { data } = await api.get(`/ocr/${documentId}`);
+  const id = parseOcrDocumentId(documentId);
+  if (id === null) {
+    throw new Error('A valid OCR document id is required');
+  }
+  console.log('OCR document id:', id);
+  const { data } = await api.get(`/ocr/${id}`);
   return data;
 }

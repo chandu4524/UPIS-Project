@@ -9,6 +9,7 @@ import {
   fetchOcrHistory,
   fetchOcrHealth,
   fetchOcrStatus,
+  parseOcrDocumentId,
   uploadOcrPdf,
   validateOcrFileClient,
 } from '../services/ocrService';
@@ -52,24 +53,13 @@ export default function OCRProcessing() {
   const [ocrReady, setOcrReady] = useState(null);
   const [ocrStatusNote, setOcrStatusNote] = useState('');
 
-  const loadOcrStatus = useCallback(async () => {
+  const loadOcrRuntimeHealth = useCallback(async () => {
     try {
-      let data;
-      try {
-        data = await fetchOcrStatus();
-      } catch (err) {
-        if (handleUnauthorizedIfNeeded(err)) {
-          return;
-        }
-        data = await fetchOcrHealth();
-      }
+      const data = await fetchOcrHealth();
       setOcrReady(Boolean(data.ocr_ready));
       const notes = data.dependencies?.notes;
       setOcrStatusNote(Array.isArray(notes) && notes.length ? notes.join(' · ') : '');
-    } catch (err) {
-      if (handleUnauthorizedIfNeeded(err)) {
-        return;
-      }
+    } catch {
       setOcrReady(null);
       setOcrStatusNote('');
     }
@@ -97,8 +87,8 @@ export default function OCRProcessing() {
 
   useEffect(() => {
     loadHistory(1);
-    loadOcrStatus();
-  }, [loadHistory, loadOcrStatus]);
+    loadOcrRuntimeHealth();
+  }, [loadHistory, loadOcrRuntimeHealth]);
 
   const loadDetail = async (documentId) => {
     setSelectedId(documentId);
@@ -160,6 +150,7 @@ export default function OCRProcessing() {
         },
       });
       setSuccess(data.message || 'PDF processed successfully');
+      const uploadDocumentId = parseOcrDocumentId(data.id);
       setResult({
         id: data.id,
         filename: data.filename,
@@ -172,6 +163,15 @@ export default function OCRProcessing() {
       });
       setFile(null);
       loadHistory(1);
+      if (uploadDocumentId !== null) {
+        try {
+          await fetchOcrStatus(uploadDocumentId);
+        } catch (statusErr) {
+          if (!handleUnauthorizedIfNeeded(statusErr)) {
+            console.warn('[OCR] post-upload status check failed', statusErr);
+          }
+        }
+      }
     } catch (err) {
       if (handleUnauthorizedIfNeeded(err)) {
         return;
