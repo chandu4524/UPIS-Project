@@ -19,9 +19,13 @@ class RequestTimeoutMiddleware(BaseHTTPMiddleware):
         self.timeout_seconds = max(30, int(timeout_seconds))
 
     def _timeout_for_path(self, path: str) -> int:
-        if path.rstrip("/") == "/api/ocr/upload":
+        normalized = path.rstrip("/")
+        if normalized == "/api/ocr/upload":
             ocr_timeout = int(os.getenv("OCR_REQUEST_TIMEOUT_SECONDS", "300"))
             return max(self.timeout_seconds, min(ocr_timeout, 600))
+        if normalized == "/api/upload-files":
+            # Receive-only; processing runs in background after job_id is returned.
+            return max(self.timeout_seconds, 300)
         return self.timeout_seconds
 
     async def dispatch(self, request: Request, call_next):
@@ -29,7 +33,7 @@ class RequestTimeoutMiddleware(BaseHTTPMiddleware):
             "/api/health",
             "/api/ocr/health",
             "/",
-        ):
+        ) or request.url.path.rstrip("/").startswith("/api/upload-jobs/"):
             return await call_next(request)
 
         timeout = self._timeout_for_path(request.url.path)

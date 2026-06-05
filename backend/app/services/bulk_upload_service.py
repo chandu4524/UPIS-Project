@@ -17,7 +17,7 @@ from app.services.upload_service import ensure_upload_folder, process_dataframe_
 
 logger = get_logger("gpip.bulk_upload")
 
-MAX_BULK_FILES = 60
+MAX_BULK_FILES = 100
 CHUNK_SIZE = 50000
 
 

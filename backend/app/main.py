@@ -35,6 +35,7 @@ from app.core.config import (
 )
 from app.middleware.timeout_middleware import RequestTimeoutMiddleware
 from app.services.demo_seed_service import verify_and_seed_demo_data
+from app.services.analytics_recovery_service import ensure_analytics_synchronized
 from app.services.duckdb_service import close_connection, initialize_duckdb
 from app.services.health_service import get_health_status, log_startup_diagnostics
 from app.core.exceptions import (
@@ -81,6 +82,12 @@ async def lifespan(app: FastAPI):
     try:
         initialize_duckdb()
         logger.info("DuckDB analytics engine initialized")
+        db_analytics = SessionLocal()
+        try:
+            sync_result = ensure_analytics_synchronized(db_analytics)
+            logger.info("Startup analytics sync: %s", sync_result)
+        finally:
+            db_analytics.close()
     except Exception as exc:
         logger.warning("DuckDB initialization failed (analytics disabled): %s", exc)
     logger.info("GPIP backend ready")

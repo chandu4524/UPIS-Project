@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_FOLDER
 from app.core.exceptions import http_error
+from app.core.logging_config import get_logger
+from app.services.demo_seed_service import DEMO_UPLOAD_FILENAMES
 from app.models.citizen import Citizen
 from app.models.person_staging import PersonStaging
 from app.models.upload import Upload
@@ -56,6 +58,9 @@ DOB_PATTERNS = (
 )
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
+MAX_MULTI_UPLOAD_FILES = 60
+
+logger = get_logger("gpip.upload")
 
 
 def _upload_status(upload: Upload, staged_count: int = 0) -> str:
@@ -87,7 +92,7 @@ def list_uploads_paginated(
     page = max(1, page)
     page_size = min(max(1, page_size), MAX_PAGE_SIZE)
 
-    query = db.query(Upload)
+    query = db.query(Upload).filter(~Upload.filename.in_(list(DEMO_UPLOAD_FILENAMES)))
     total = query.count()
 
     uploads = (
@@ -217,11 +222,21 @@ def process_upload_file_item(
 ) -> Dict[str, Any]:
     """Process one upload file; failures are returned as a failed item, not raised."""
     filename = file.filename or os.path.basename(file_path)
+    logger.info("upload start filename=%s department=%s", filename, department_name)
     try:
         validate_upload_file(file)
         result = process_file_upload(db, file, file_path, department_name=department_name)
-        return file_upload_item_from_result(filename, result)
+        item = file_upload_item_from_result(filename, result)
+        logger.info(
+            "upload complete filename=%s file_id=%s rows=%s analytics_warning=%s",
+            filename,
+            item.get("file_id"),
+            item.get("rows_processed"),
+            item.get("analytics_warning"),
+        )
+        return item
     except Exception as exc:
+        logger.exception("upload failed filename=%s error=%s", filename, exc)
         return file_upload_item_from_error(filename, exc)
 
 
@@ -525,6 +540,13 @@ def process_dataframe_upload(
         db.commit()
         db.refresh(upload_record)
 
+    logger.info(
+        "upload pipeline start upload_id=%s filename=%s department=%s",
+        upload_record.id,
+        filename,
+        department_name,
+    )
+
     missing_value_counts: Dict[str, int] = {c: 0 for c in REQUIRED_COLUMNS}
     preview_rows: Optional[List[Dict[str, Any]]] = None
     analytics_chunk_warnings: List[str] = []
@@ -583,8 +605,25 @@ def process_dataframe_upload(
 
     except Exception as exc:
         summary_warning = f"DuckDB summary sync failed: {exc}"
+        logger.exception(
+            "analytics sync failed upload_id=%s filename=%s error=%s",
+            upload_record.id,
+            filename,
+            exc,
+        )
 
     analytics_warning = _build_analytics_warning(analytics_chunk_warnings, summary_warning)
+    logger.info(
+        "upload validation upload_id=%s total_rows=%s valid_rows=%s invalid_rows=%s "
+        "duplicate_rows=%s staged_rows=%s rows_imported=%s",
+        upload_record.id,
+        validation.get("total_rows"),
+        validation.get("valid_rows"),
+        validation.get("invalid_rows"),
+        validation.get("duplicate_rows"),
+        validation.get("staged_rows"),
+        rows_imported,
+    )
     skipped_duplicates = int(validation.get("skipped_duplicates") or 0)
     validation_warning = None
     if skipped_duplicates > 0:

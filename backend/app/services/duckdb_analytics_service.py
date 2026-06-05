@@ -47,15 +47,31 @@ def sync_upload_summary(
                 }
             ]
         )
-        append_dataframe_to_table(
+        rows = append_dataframe_to_table(
             UPLOAD_SUMMARIES_TABLE,
             payload,
             relation="summary_payload",
         )
+        logger.info(
+            "analytics sync upload_id=%s source_file=%s total_rows=%s valid_rows=%s "
+            "invalid_rows=%s duplicate_rows=%s rows_written=%s",
+            upload_id,
+            source_file,
+            validation.get("total_rows"),
+            validation.get("valid_rows"),
+            validation.get("invalid_rows"),
+            validation.get("duplicate_rows"),
+            rows,
+        )
         return None
     except Exception as exc:
         warning = f"DuckDB summary sync failed: {exc}"
-        logger.warning("DuckDB upload summary sync failed for upload %s: %s", upload_id, exc)
+        logger.exception(
+            "analytics sync failed upload_id=%s source_file=%s error=%s",
+            upload_id,
+            source_file,
+            exc,
+        )
         return warning
 
 
@@ -189,6 +205,18 @@ def get_validation_distribution() -> List[Dict[str, Any]]:
                 {"label": "Valid", "count": int(row["valid_records"] or 0)},
                 {"label": "Invalid", "count": int(row["invalid_records"] or 0)},
                 {"label": "Duplicate", "count": int(row["duplicate_records"] or 0)},
+            ]
+
+    if table_exists(UPLOADED_DATA_TABLE):
+        df = execute_query(
+            f"SELECT COUNT(*) AS total_records FROM {UPLOADED_DATA_TABLE}"
+        )
+        if not df.empty and int(df.iloc[0]["total_records"] or 0) > 0:
+            total = int(df.iloc[0]["total_records"])
+            return [
+                {"label": "Valid", "count": total},
+                {"label": "Invalid", "count": 0},
+                {"label": "Duplicate", "count": 0},
             ]
 
     return [

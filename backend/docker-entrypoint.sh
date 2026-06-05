@@ -13,6 +13,7 @@ export OCR_FOLDER="${OCR_FOLDER:-/tmp/ocr_uploads}"
 export UPLOAD_FOLDER="${UPLOAD_FOLDER:-/tmp/uploads}"
 
 mkdir -p "$OCR_FOLDER" "$UPLOAD_FOLDER" /tmp/data 2>/dev/null || true
+export DUCKDB_PATH="${DUCKDB_PATH:-/tmp/data/gpip_analytics.duckdb}"
 
 echo "Starting GPIP API on port ${PORT}"
 echo "TESSERACT_CMD=${TESSERACT_CMD}"

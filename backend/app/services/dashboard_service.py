@@ -4,6 +4,11 @@ from sqlalchemy import func
 from app.models.citizen import Citizen
 from app.models.upload import Upload
 from app.services.data_scope_service import count_duckdb_uploaded_rows, count_person_staging
+from app.services.demo_seed_service import DEMO_UPLOAD_FILENAMES
+
+
+def _real_uploads_query(db: Session):
+    return db.query(Upload).filter(~Upload.filename.in_(list(DEMO_UPLOAD_FILENAMES)))
 
 
 def get_dashboard_stats(db: Session):
@@ -21,16 +26,16 @@ def get_dashboard_stats(db: Session):
         )
     ).scalar()
 
-    uploaded_files = db.query(
-        func.count(Upload.id)
-    ).scalar()
+    uploaded_files = _real_uploads_query(db).count()
 
-    total_imported_rows = db.query(
-        func.coalesce(func.sum(Upload.uploaded_rows), 0)
-    ).scalar()
+    total_imported_rows = (
+        _real_uploads_query(db)
+        .with_entities(func.coalesce(func.sum(Upload.uploaded_rows), 0))
+        .scalar()
+    )
 
     recent_uploads = (
-        db.query(Upload)
+        _real_uploads_query(db)
         .order_by(Upload.uploaded_at.desc())
         .limit(5)
         .all()

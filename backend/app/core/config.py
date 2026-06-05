@@ -37,6 +37,11 @@ def _resolve_folder_path(value: str, default: Path) -> str:
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "120"))
+IS_PRODUCTION = APP_ENV in ("production", "prod")
+
+# Demo seeding — off by default; enable only in non-production with ENABLE_DEMO_SEED=true
+_ENABLE_DEMO_RAW = os.getenv("ENABLE_DEMO_SEED", "").strip().lower() in ("1", "true", "yes")
+ENABLE_DEMO_SEED = _ENABLE_DEMO_RAW and not IS_PRODUCTION
 
 # Database
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -69,6 +74,13 @@ OCR_FOLDER = _resolve_folder_path(
 DEFAULT_OFFICER_USERNAME = os.getenv("DEFAULT_OFFICER_USERNAME", "chandu")
 DEFAULT_OFFICER_PASSWORD = os.getenv("DEFAULT_OFFICER_PASSWORD", "Chandu@24")
 DEFAULT_OFFICER_ROLE = os.getenv("DEFAULT_OFFICER_ROLE", "admin")
+
+# DuckDB analytics store (Render: use /tmp/data for writable ephemeral disk)
+_duckdb_env = os.getenv("DUCKDB_PATH", "").strip()
+if _duckdb_env:
+    DUCKDB_PATH = Path(_duckdb_env)
+else:
+    DUCKDB_PATH = DATA_DIR / "gpip_analytics.duckdb"
 
 
 def _mask_database_url(url: str) -> str:

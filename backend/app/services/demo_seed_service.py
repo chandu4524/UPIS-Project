@@ -1,10 +1,11 @@
-"""Ensure minimum demo data exists for dashboards, reports, and assistant (additive only)."""
+"""Optional demo data for local development — disabled in production unless ENABLE_DEMO_SEED=true."""
 
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, FrozenSet, List
 
 from sqlalchemy.orm import Session
 
+from app.core.config import ENABLE_DEMO_SEED
 from app.core.logging_config import get_logger
 from app.models.audit_log import AuditLog
 from app.models.citizen import Citizen
@@ -18,6 +19,14 @@ MIN_CITIZENS = 8
 MIN_UPLOADS = 2
 MIN_AUDIT_LOGS = 3
 MIN_OCR_DOCS = 1
+
+DEMO_UPLOAD_FILENAMES: FrozenSet[str] = frozenset({
+    "citizens_batch_01.csv",
+    "village_registry_q2.csv",
+    "district_update_may.csv",
+})
+
+DEMO_OCR_FILENAME = "demo_registry.pdf"
 
 DEMO_CITIZENS: List[Dict[str, str]] = [
     {
@@ -77,6 +86,10 @@ DEMO_CITIZENS: List[Dict[str, str]] = [
         "dob": "12-12-1987",
     },
 ]
+
+
+def is_demo_upload_filename(filename: str) -> bool:
+    return (filename or "").strip() in DEMO_UPLOAD_FILENAMES
 
 
 def _existing_mobiles(db: Session) -> set:
@@ -175,11 +188,11 @@ def ensure_demo_ocr_documents(db: Session) -> int:
     count = db.query(OcrDocument).count()
     if count >= MIN_OCR_DOCS:
         return 0
-    if db.query(OcrDocument).filter(OcrDocument.filename == "demo_registry.pdf").first():
+    if db.query(OcrDocument).filter(OcrDocument.filename == DEMO_OCR_FILENAME).first():
         return 0
     db.add(
         OcrDocument(
-            filename="demo_registry.pdf",
+            filename=DEMO_OCR_FILENAME,
             extracted_text="Demo OCR extract — Chandu Kumar, Visakhapatnam, MVP Colony.",
             confidence_score=88.5,
             created_at=datetime.utcnow() - timedelta(days=1),
@@ -189,10 +202,47 @@ def ensure_demo_ocr_documents(db: Session) -> int:
     return 1
 
 
+def purge_demo_seed_records(db: Session) -> Dict[str, int]:
+    """Remove demo seed uploads/OCR so history and analytics show real data only."""
+    result = {"uploads_removed": 0, "ocr_removed": 0}
+    demo_uploads = (
+        db.query(Upload)
+        .filter(Upload.filename.in_(list(DEMO_UPLOAD_FILENAMES)))
+        .all()
+    )
+    for row in demo_uploads:
+        db.delete(row)
+        result["uploads_removed"] += 1
+
+    demo_ocr = (
+        db.query(OcrDocument)
+        .filter(OcrDocument.filename == DEMO_OCR_FILENAME)
+        .all()
+    )
+    for row in demo_ocr:
+        db.delete(row)
+        result["ocr_removed"] += 1
+
+    if result["uploads_removed"] or result["ocr_removed"]:
+        db.commit()
+        logger.info("Purged demo seed records: %s", result)
+    return result
+
+
 def verify_and_seed_demo_data(db: Session) -> Dict[str, int]:
-    """
-    Top up demo records when counts are low. Does not alter schema or remove data.
-    """
+    """Top up demo records when ENABLE_DEMO_SEED is true (development only)."""
+    if not ENABLE_DEMO_SEED:
+        purged = purge_demo_seed_records(db)
+        return {
+            "citizens_added": 0,
+            "uploads_added": 0,
+            "audit_logs_added": 0,
+            "ocr_documents_added": 0,
+            "reviews_synced": 0,
+            "uploads_removed": purged["uploads_removed"],
+            "ocr_removed": purged["ocr_removed"],
+        }
+
     citizen_count = db.query(Citizen).count()
     result = {
         "citizens_added": 0,

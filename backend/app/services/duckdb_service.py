@@ -11,12 +11,10 @@ from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 
-from app.core.config import BASE_DIR
+from app.core.config import DUCKDB_PATH
 from app.core.logging_config import get_logger
 
 logger = get_logger("gpip.duckdb")
-
-DUCKDB_PATH = BASE_DIR / "data" / "gpip_analytics.duckdb"
 UPLOADED_DATA_TABLE = "uploaded_data"
 
 _connection: Any = None
@@ -374,6 +372,12 @@ def duckdb_health() -> dict:
             "error": str(exc),
             "tables": [],
         }
+
+
+def clear_table(table_name: str) -> None:
+    """Delete all rows from a DuckDB table if it exists."""
+    if table_exists(table_name):
+        _run_execute(f"DELETE FROM {_quote_ident(table_name)}")
 
 
 def list_tables() -> List[str]:

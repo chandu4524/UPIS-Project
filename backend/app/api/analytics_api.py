@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.auth.deps import CurrentUser, require_permission
 from app.auth.rbac import PERM_DASHBOARD_ANALYTICS
 from app.core.exceptions import http_error
 from app.core.logging_config import get_logger
+from app.services.analytics_recovery_service import ensure_analytics_synchronized
 from app.services.duckdb_analytics_service import (
     get_dashboard_summary,
     get_source_distribution,
@@ -11,6 +13,7 @@ from app.services.duckdb_analytics_service import (
     get_validation_distribution,
 )
 from app.services.duckdb_service import duckdb_health
+from app.utils.dependencies import get_db
 
 logger = get_logger("gpip.analytics_api")
 
@@ -27,11 +30,22 @@ def _ensure_duckdb_ready() -> None:
         )
 
 
+def _sync_analytics(db: Session) -> None:
+    try:
+        result = ensure_analytics_synchronized(db)
+        if result.get("action") == "rebuilt":
+            logger.info("analytics auto-recovery: %s", result)
+    except Exception as exc:
+        logger.warning("analytics sync check failed (continuing): %s", exc)
+
+
 @router.get("/dashboard-summary")
 def analytics_dashboard_summary(
+    db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_permission(PERM_DASHBOARD_ANALYTICS)),
 ):
     _ensure_duckdb_ready()
+    _sync_analytics(db)
     summary = get_dashboard_summary()
     return {
         "success": True,
@@ -43,12 +57,10 @@ def analytics_dashboard_summary(
 
 @router.get("/source-distribution")
 def analytics_source_distribution(
+    db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_permission(PERM_DASHBOARD_ANALYTICS)),
 ):
-    """
-    Source distribution is isolated from the global DuckDB health gate so a stale
-    connection state on this query does not block the endpoint with 503.
-    """
+    _sync_analytics(db)
     items, warning = get_source_distribution()
     if warning:
         logger.warning("source-distribution returning empty items: %s", warning)
@@ -67,9 +79,11 @@ def analytics_source_distribution(
 
 @router.get("/validation-distribution")
 def analytics_validation_distribution(
+    db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_permission(PERM_DASHBOARD_ANALYTICS)),
 ):
     _ensure_duckdb_ready()
+    _sync_analytics(db)
     items = get_validation_distribution()
     return {
         "success": True,
@@ -81,9 +95,11 @@ def analytics_validation_distribution(
 
 @router.get("/upload-trends")
 def analytics_upload_trends(
+    db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_permission(PERM_DASHBOARD_ANALYTICS)),
 ):
     _ensure_duckdb_ready()
+    _sync_analytics(db)
     items = get_upload_trends()
     return {
         "success": True,
