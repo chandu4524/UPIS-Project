@@ -56,8 +56,8 @@ export default function Upload() {
       return;
     }
 
-    if (files.length > 30) {
-      setError('You can upload a maximum of 30 files at a time');
+    if (files.length > 60) {
+      setError('You can upload a maximum of 60 files at a time');
       return;
     }
 
@@ -79,30 +79,45 @@ export default function Upload() {
     );
 
     try {
-      setMessage('Uploading files and validating data...');
+      setMessage('Uploading files…');
+
+      const applyJobProgress = (jobData) => {
+        const fileResults = Array.isArray(jobData?.items) ? jobData.items : [];
+        const done = (jobData?.succeeded || 0) + (jobData?.failed || 0);
+        const total = jobData?.count || files.length;
+        setMessage(
+          jobData?.message
+            || `Processing upload job (${done}/${total} files complete)…`,
+        );
+        setResults((prev) =>
+          prev.map((r, idx) => {
+            const item = fileResults[idx];
+            if (!item) {
+              return { ...r, status: 'uploading', progress: 50 };
+            }
+            const uploadOk = item?.upload_success === true || item?.status === 'success';
+            const processing = item?.status === 'processing';
+            return {
+              ...r,
+              status: uploadOk ? 'completed' : processing ? 'uploading' : 'failed',
+              progress: uploadOk || item?.status === 'failed' ? 100 : 50,
+              response: item || null,
+              error: uploadOk ? null : (item?.error || item?.message || (processing ? '' : 'Upload failed')),
+              analyticsWarning: uploadOk ? (item?.analytics_warning || null) : null,
+              validationWarning: uploadOk
+                ? (item?.validation_warning || null)
+                : null,
+            };
+          }),
+        );
+      };
 
       const response = await uploadCSVFiles(files, {
         dataSourceId: selectedSourceId ? Number(selectedSourceId) : null,
+        onJobProgress: applyJobProgress,
       });
       const fileResults = Array.isArray(response?.items) ? response.items : [];
-
-      setResults((prev) =>
-        prev.map((r, idx) => {
-          const item = fileResults[idx];
-          const uploadOk = item?.upload_success === true || item?.status === 'success';
-          return {
-            ...r,
-            status: uploadOk ? 'completed' : 'failed',
-            progress: 100,
-            response: item || null,
-            error: uploadOk ? null : (item?.error || item?.message || 'Upload failed'),
-            analyticsWarning: uploadOk ? (item?.analytics_warning || null) : null,
-            validationWarning: uploadOk
-              ? (item?.validation_warning || null)
-              : null,
-          };
-        })
-      );
+      applyJobProgress(response);
 
       const succeeded = fileResults.filter(
         (item) => item?.upload_success === true || item?.status === 'success'
@@ -166,7 +181,7 @@ export default function Upload() {
 
   return (
     <Layout>
-      {loading && <Loader label="Uploading files and validating data..." />}
+      {loading && <Loader label="Processing upload job in background…" />}
 
       <div className="upload-page-wrap">
         <div className="upload-page card">
@@ -227,7 +242,7 @@ export default function Upload() {
             disabled={loading}
             files={files}
             onFilesChange={setFiles}
-            maxFiles={30}
+            maxFiles={60}
           />
 
           <div className="upload-actions">

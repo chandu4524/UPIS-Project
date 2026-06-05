@@ -17,10 +17,14 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: starter
-    healthCheckPath: /api/ocr/health
+    healthCheckPath: /api/health
     envVars:
       - key: APP_ENV
         value: production
+      - key: ENABLE_DEMO_SEED
+        value: "false"
+      - key: DUCKDB_PATH
+        value: /tmp/data/gpip_analytics.duckdb
       - key: LOG_LEVEL
         value: INFO
       - key: TESSERACT_CMD

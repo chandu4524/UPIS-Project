@@ -18,7 +18,7 @@ export default function MultiFileDropZone({
   disabled = false,
   files = [],
   onFilesChange,
-  maxFiles = 30,
+  maxFiles = 60,
   hint = 'Drag and drop files here, or click to browse',
 }) {
   const inputRef = useRef(null);
