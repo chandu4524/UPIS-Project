@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import http_error
 from app.models.template_mapping import TemplateMapping
+from app.utils.display_validation import validate_display_name
 
 
 def template_to_dict(record: TemplateMapping) -> dict:
@@ -27,9 +28,7 @@ def save_template_mapping(
     template_name: str,
     mapping: dict,
 ) -> dict:
-    name = (template_name or "").strip()
-    if not name:
-        raise http_error(400, "Template name is required")
+    name = validate_display_name(template_name, field_label="Template name")
     if not isinstance(mapping, dict):
         raise http_error(400, "Mapping must be a JSON object")
 

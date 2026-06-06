@@ -7,7 +7,8 @@ import pandas as pd
 STANDARD_DOB_FORMAT = "%d-%m-%Y"
 MAX_PREVIEW_ITEMS = 40
 
-_INVALID_TEXT_RE = re.compile(r"[^\w\s\-\'\.]", re.UNICODE)
+# Allow human-readable text: letters, numbers, spaces, - _ & ( ) . / and apostrophes in names.
+_INVALID_TEXT_RE = re.compile(r"[^\w\s\-_&()./']", re.UNICODE)
 
 
 def _raw_string(value) -> str:

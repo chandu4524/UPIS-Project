@@ -1,4 +1,3 @@
-import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -6,12 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import http_error
 from app.models.data_source import DataSource
-
-_CODE_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
-
-
-def _normalize_code(source_code: str) -> str:
-    return (source_code or "").strip().upper()
+from app.utils.display_validation import (
+    ensure_unique_slug,
+    generate_slug,
+    validate_display_name,
+)
 
 
 def data_source_to_dict(source: DataSource) -> dict:
@@ -57,29 +55,37 @@ def resolve_department_name(db: Session, data_source_id: Optional[int]) -> Optio
     return source.source_code
 
 
+def _source_code_taken(db: Session, code: str, exclude_id: Optional[int] = None) -> bool:
+    existing = db.query(DataSource).filter(DataSource.source_code == code).first()
+    return bool(existing and (exclude_id is None or existing.id != exclude_id))
+
+
+def _generate_source_code(
+    db: Session,
+    source_name: str,
+    *,
+    exclude_id: Optional[int] = None,
+) -> str:
+    base = generate_slug(source_name)
+    return ensure_unique_slug(
+        base,
+        lambda candidate: _source_code_taken(db, candidate, exclude_id=exclude_id),
+    )
+
+
 def _validate_payload(
     *,
     source_name: str,
-    source_code: str,
     db: Session,
     exclude_id: Optional[int] = None,
+    existing_code: Optional[str] = None,
+    regenerate_code: bool = True,
 ) -> Dict[str, Any]:
-    name = (source_name or "").strip()
-    code = _normalize_code(source_code)
-    if not name:
-        raise http_error(400, "Source name is required")
-    if not code:
-        raise http_error(400, "Source code is required")
-    if not _CODE_RE.match(code):
-        raise http_error(
-            400,
-            "Source code may only contain letters, numbers, underscores, and hyphens",
-        )
-
-    existing = db.query(DataSource).filter(DataSource.source_code == code).first()
-    if existing and (exclude_id is None or existing.id != exclude_id):
-        raise http_error(409, f"Source code already exists: {code}")
-
+    name = validate_display_name(source_name, field_label="Source name")
+    if regenerate_code or not existing_code:
+        code = _generate_source_code(db, name, exclude_id=exclude_id)
+    else:
+        code = existing_code
     return {"source_name": name, "source_code": code}
 
 
@@ -87,11 +93,10 @@ def create_data_source(
     db: Session,
     *,
     source_name: str,
-    source_code: str,
     description: Optional[str] = None,
     is_active: bool = True,
 ) -> dict:
-    payload = _validate_payload(source_name=source_name, source_code=source_code, db=db)
+    payload = _validate_payload(source_name=source_name, db=db)
     source = DataSource(
         source_name=payload["source_name"],
         source_code=payload["source_code"],
@@ -110,7 +115,6 @@ def update_data_source(
     source_id: int,
     *,
     source_name: Optional[str] = None,
-    source_code: Optional[str] = None,
     description: Optional[str] = None,
     is_active: Optional[bool] = None,
 ) -> dict:
@@ -119,12 +123,13 @@ def update_data_source(
         raise http_error(404, "Data source not found")
 
     next_name = source_name if source_name is not None else source.source_name
-    next_code = source_code if source_code is not None else source.source_code
+    regenerate_code = source_name is not None
     payload = _validate_payload(
         source_name=next_name,
-        source_code=next_code,
         db=db,
         exclude_id=source.id,
+        existing_code=source.source_code,
+        regenerate_code=regenerate_code,
     )
 
     source.source_name = payload["source_name"]

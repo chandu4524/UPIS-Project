@@ -16,20 +16,19 @@ from app.services.data_source_service import (
 )
 from app.core.exceptions import http_error
 from app.utils.dependencies import get_db
+from app.utils.display_validation import DISPLAY_NAME_MAX_LENGTH
 
 router = APIRouter(prefix="/data-sources", tags=["Data Sources"])
 
 
 class DataSourceCreate(BaseModel):
-    source_name: str = Field(..., min_length=1, max_length=255)
-    source_code: str = Field(..., min_length=1, max_length=64)
+    source_name: str = Field(..., min_length=1, max_length=DISPLAY_NAME_MAX_LENGTH)
     description: Optional[str] = None
     is_active: bool = True
 
 
 class DataSourceUpdate(BaseModel):
-    source_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    source_code: Optional[str] = Field(None, min_length=1, max_length=64)
+    source_name: Optional[str] = Field(None, min_length=1, max_length=DISPLAY_NAME_MAX_LENGTH)
     description: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -63,7 +62,6 @@ def create_data_source_route(
     item = create_data_source(
         db,
         source_name=body.source_name,
-        source_code=body.source_code,
         description=body.description,
         is_active=body.is_active,
     )
@@ -84,7 +82,6 @@ def update_data_source_route(
 ):
     if (
         body.source_name is None
-        and body.source_code is None
         and body.description is None
         and body.is_active is None
     ):
@@ -94,7 +91,6 @@ def update_data_source_route(
         db,
         source_id,
         source_name=body.source_name,
-        source_code=body.source_code,
         description=body.description,
         is_active=body.is_active,
     )

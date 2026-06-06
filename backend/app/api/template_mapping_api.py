@@ -13,12 +13,13 @@ from app.services.template_mapping_service import (
     save_template_mapping,
 )
 from app.utils.dependencies import get_db
+from app.utils.display_validation import DISPLAY_NAME_MAX_LENGTH
 
 router = APIRouter(tags=["Template Mapping"])
 
 
 class TemplateMappingSaveRequest(BaseModel):
-    template_name: str = Field(..., min_length=1, max_length=255)
+    template_name: str = Field(..., min_length=1, max_length=DISPLAY_NAME_MAX_LENGTH)
     mapping: Dict[str, Any]
 
 

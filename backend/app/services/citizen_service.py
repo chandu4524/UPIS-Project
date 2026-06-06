@@ -97,8 +97,11 @@ def get_citizen_by_id(db: Session, citizen_id: int) -> Optional[Citizen]:
     return db.query(Citizen).filter(Citizen.id == citizen_id).first()
 
 
+from app.utils.display_validation import generate_slug
+
+
 def _graph_slug(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "unknown"
+    return generate_slug(value) or "unknown"
 
 
 def build_citizen_relationship_graph(db: Session, citizen_id: int) -> Optional[dict]:
