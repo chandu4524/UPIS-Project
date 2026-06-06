@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# Render sets PORT; default 8000 for local Docker runs.
-export PORT="${PORT:-8000}"
+# Render injects PORT (typically 10000). Default matches Render for local Docker runs.
+export PORT="${PORT:-10000}"
 
 # Debian Docker image paths (set in Dockerfile; allow override on Render).
 export TESSERACT_CMD="${TESSERACT_CMD:-/usr/bin/tesseract}"
