@@ -13,6 +13,7 @@ from app.models.citizen import Citizen
 from app.models.person_source import PersonSource
 from app.models.person_staging import PersonStaging
 from app.services.citizen_service import mobile_lookup_key
+from app.services.header_canonicalization import UNIVERSAL_HEADER_ALIASES, normalize_header
 
 SKIP_FIELD_KEYS = frozenset(
     {
